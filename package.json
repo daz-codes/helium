@@ -1,5 +1,5 @@
 {
-  "name": "heliumjs",
+  "name": "@daz4126/heliumjs",
   "version": "0.1.0",
   "main": "helium.js",
   "type": "module",
