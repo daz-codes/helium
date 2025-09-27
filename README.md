@@ -1,6 +1,6 @@
 # Helium
 
-Super light & super powerful .... Helium makes HTML interactive!
+Light & powerful .... Helium makes HTML interactive!
 
 ```html
 <main @helium>
