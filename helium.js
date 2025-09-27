@@ -1,4 +1,4 @@
-function helium(data = {}) {
+export default function helium(data = {}) {
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body
   const [bindings, refs] = [new Map(), new Map()]
   const $ = selector => document.querySelector(selector)
