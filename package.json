@@ -1,0 +1,24 @@
+{
+  "name": "heliumjs",
+  "version": "0.1.0",
+  "main": "helium.js",
+  "type": "module",
+  "keywords": [
+    "tiny",
+    "reactive",
+    "state",
+    "light",
+    "powerful"
+  ],
+  "author": "DAZ",
+  "license": "MIT",
+  "description": "A light yet powerful library that makes HTML interactive",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daz-codes/helium.git"
+  },
+  "bugs": {
+    "url": "https://github.com/daz-codes/helium/issues"
+  },
+  "homepage": "https://github.com/daz-codes/helium#readme"
+}
