@@ -1,6 +1,6 @@
 # Helium
 
-The light yet powerful library that makes HTML interactive!
+Super light & super powerful .... Helium makes HTML interactive!
 
 ```html
 <main @helium>
