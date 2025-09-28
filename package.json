@@ -12,7 +12,7 @@
   ],
   "author": "DAZ",
   "license": "MIT",
-  "description": "A light yet powerful library that makes HTML interactive",
+  "description": "The ultra-light library that makes HTML interactive",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/daz-codes/helium.git"
