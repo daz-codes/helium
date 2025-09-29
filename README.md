@@ -34,7 +34,7 @@ helium
 
 ## `@helium`
 
-This attribute is needed on the root element for all the other attributes to work.
+This attribute sets the root element. Helium attributes can only be used on this element and its children. If not set then it defaults to `document`.
 
 Alias: `data-helium`
 
@@ -54,11 +54,19 @@ Alias: `data-he-bind`
 
 Makes the element hidden or visible depending on the result of a JavaScript expression.
 
+```html
+<div @hidden="count > 3">Only visible if the count is greater than 3</div>
+```
+
 Alias: `data-he-hidden` & `data-he-visible`
 
 ## `@data`
 
 Initializes variables that can be used in JacaScript expressions.
+
+```html
+<div @data="{ count: 0, open: false }"></div>
+```
 
 Alias: `data-he-data`
 
@@ -84,11 +92,25 @@ Alias: `data-he-ref`
 
 A JavaScript expression that will run once when Helium initializes.
 
+```html
+<div @init="timestamp = Date.now()"></div>
+```
+
 Alias: `data-he-init`
 
 ## Event Listeners & Handlers
 
 Event listeners and handlers can be created by prepending `@` before the event name, for example `@click="count++"` will run the cound `count++` when the element is clicked on.
+
+```html
+<button @click="count++">Increment</button>
+```
+
+You can add modifiers of `prevent` to prevent the default behaviour, `outside` to only fire when the event happens outside the element and `once` to only run the event handler once.
+
+```html
+<button @click.prevent="submitForm()">Save</button>
+```
 
 Alias: prepend the event name with `data-he-on`, for example `data-he-onclick="count++"`
 
@@ -104,4 +126,4 @@ Alias: prepend the event name with `data-he-on`, for example `data-he-onclick="c
 
 ## Default Variables and Functions
 
-The helium function accepts a single JavaScript object as an argument. This can inlude default variable values  and functions that can then be called inside the JavaScript expressions.
+The helium function accepts a single JavaScript object as an argument. This can include default variable values and functions that can then be called inside the JavaScript expressions.
