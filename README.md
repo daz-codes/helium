@@ -40,13 +40,31 @@ Alias: `data-helium`
 
 ## `@react`
 
-Inserts the result of a JavaScript expression into the text-content of the element
+Inserts the result of a JavaScript expression into the text-content of the element.
+
+This will update the textContent of the element with the value of the `count` variable:
+
+```html
+<b @react="count">0</b>
+```
+
+You can also use expresions. This will update the textContent of the element with the value of the `name` variable but in uppercase:
+
+```html
+<span @react="name.toUpperCase()">0</span>
+```
 
 Alias: `data-he-react`
 
 ## `@bind`
 
 Creates a 2-way binding between an input or textcontent element's value attribute and a variable.
+
+Whatever is entered in the following input field will be stored as a variable called `name`:
+
+```html
+<input @bind="name" placeholder="Enter your name">
+```
 
 Alias: `data-he-bind`
 
