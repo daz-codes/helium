@@ -57,14 +57,24 @@ Alias: `data-he-ref`
 
 ## @init
 
-## Event Handlers
+A JavaScript expression that will run once when Helium initializes.
+
+Alias: `data-he-init`
+
+## Event Listeners & Handlers
+
+Event listeners and handlers can be created by prepending `@` before the event name, for example `@click="count++"` will run the cound `count++` when the element is clicked on.
+
+Alias: prepend the event name with `data-he-on`, for example `data-he-onclick="count++"`
 
 ## Conditional Attributes
 
 ## Magic Attributes
 
 `$` is an alias for `document.querySelector`
-`$el` is an alias for the element that the expression is attached to
+
+`$el` is an alias for the element
+
 `$event` is an alias for the event object of an event handler
 
 ## Default Variables and Functions
