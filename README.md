@@ -21,15 +21,39 @@ helium()
 
 ## @helium
 
+This attribute is needed on the root element for all the other attributes to work.
+
+Alias: `data-helium`
+
 ## @react
+
+Inserts the result of a JavaScript expression into the text-content of the element
+
+Alias: `data-he-react`
 
 ## @bind
 
+Creates a 2-way binding between an input or textcontent element's value attribute and a variable.
+
+Alias: `data-he-bind`
+
 ## @hidden and @visible
+
+Makes the element hidden or visible depending on the result of a JavaScript expression.
+
+Alias: `data-he-hidden` and `data-he-visible`
 
 ## @data
 
+Initializes variables that can be used in JacaScript expressions.
+
+Alias: `data-he-data`
+
 ## @ref
+
+Creates a reference to the element that can be used in JavaScript expressions.
+
+Alias: `data-he-ref`
 
 ## @init
 
@@ -38,8 +62,11 @@ helium()
 ## Conditional Attributes
 
 ## Magic Attributes
-`$`
-`$el`
-`$event`
 
-## Default State and Functions
+`$` is an alias for `document.querySelector`
+`$el` is an alias for the element that the expression is attached to
+`$event` is an alias for the event object of an event handler
+
+## Default Variables and Functions
+
+The helium function accepts a single JavaScript object as an argument. This can inlude default variable values  and functions that can then be called inside the JavaScript expressions.
