@@ -52,6 +52,7 @@ It is designed for **AI assistants** and **developers** to have a clear playbook
 ```
 
 ###Events
+
 @event / data-he-on* → Attach event listeners.
 .prevent → preventDefault
 .once → run once then remove
