@@ -12,11 +12,24 @@ Here's a simple example of a button that counts clicks and turns red after more 
 
 [See more examples here](https://codepen.io/daz4126/pen/YPwwdBK)
 
-To use, just import from npm then call the `helium` funtion:
+To use, just import from the CDN then call the `helium` funtion (no install or build step required!):
+
+```javascript
+import helium from "https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js"
+helium()
+```
+
+Alernatively you can install from NPM:
+
+```bash
+npm install @daz4126/helium
+```
+
+Then include it in your
 
 ```javascript
 import helium from "@daz4126/helium"
-helium()
+helium
 ```
 
 ## `@helium`
