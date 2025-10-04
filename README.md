@@ -6,7 +6,7 @@ Here's a simple example of a button that counts clicks and turns red after more 
 
 ```html
 <button @helium @click="count++" :style="count > 3 && 'background: red'">
-    clicked <span @react="count">0</span> times
+    clicked <span @text="count">0</span> times
 </button>
 ```
 
@@ -38,23 +38,23 @@ This attribute sets the root element. Helium attributes can only be used on this
 
 Alias: `data-helium`
 
-## `@react`
+## `@text`
 
 Inserts the result of a JavaScript expression into the text-content of the element.
 
 This will update the textContent of the element with the value of the `count` variable:
 
 ```html
-<b @react="count">0</b>
+<b @text="count">0</b>
 ```
 
 You can also use expresions. This will update the textContent of the element with the value of the `name` variable but in uppercase:
 
 ```html
-<span @react="name.toUpperCase()">0</span>
+<span @text="name.toUpperCase()">0</span>
 ```
 
-Alias: `data-he-react`
+Alias: `data-he-text`
 
 ## `@bind`
 
