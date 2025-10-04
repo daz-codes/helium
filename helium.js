@@ -67,6 +67,8 @@ export default function helium(data = {}) {
         if (
           name == "@react" ||
           name == "data-he-react" ||
+          name == "@text" ||
+          name == "data-he-text" ||
           name == "@bind" ||
           name == "data-he-bind"
         ) {
@@ -95,7 +97,12 @@ export default function helium(data = {}) {
             ),
           );
         if (name == "@ref" || name == "data-he-ref") refs.set("$" + value, el);
-        if (name == "@react" || name == "data-he-react")
+        if (
+          name == "@react" ||
+          name == "data-he-react" ||
+          name == "@text" ||
+          name == "data-he-text"
+        )
           Object.keys(state)
             .filter((key) => value.includes(key))
             .forEach((val) =>
