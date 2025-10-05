@@ -75,7 +75,10 @@ export default function helium(data = {}) {
           try {
             new Function(`let ${value} = 1`);
             state[value] ||=
-              name == "@react" || name == "data-he-react"
+              name == "@react" ||
+              name == "data-he-react" ||
+              name == "@text" ||
+              name == "data-he-text"
                 ? el.textContent
                 : el.value;
           } catch (e) {}
