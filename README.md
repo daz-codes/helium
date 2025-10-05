@@ -2,11 +2,11 @@
 
 The ultra-light library that makes HTML interactive!
 
-Here's a simple example of a button that counts clicks and turns red after more than 3 presses:
+Here's a simple example of a button that counts the number of times it has been clicked and turns red after more than 3 clicks:
 
 ```html
-<button @helium @click="count++" :style="count > 3 && 'background: red'">
-    clicked <span @text="count">0</span> times
+<button @click="count++" :style="count > 3 && 'background: red'">
+    clicked <b @text="count">0</b> times
 </button>
 ```
 
@@ -29,8 +29,12 @@ Then include it in your
 
 ```javascript
 import helium from "@daz4126/helium"
-helium
+helium()
 ```
+
+# Attributes
+
+Helium uses custom attributes to add interactivity to HTML elements. To identify them, they all start with `@`, although there are also `data` attribute aliases that can be used instead.
 
 ## `@helium`
 
@@ -132,7 +136,17 @@ You can add modifiers of `prevent` to prevent the default behaviour, `outside` t
 
 Alias: prepend the event name with `data-he-on`, for example `data-he-onclick="count++"`
 
-## Conditional Attributes
+## Dynamic Attributes
+
+It's possible to dynamically update the attributes of elements. To do this, just prepend a `:` in front of the attribute name and write a JavaScript expression that evaulates to the desired attribute value. This will update whenever any of the Helium variables change value.
+
+In the following example, the `<div>` element has a dynamic class attribute that will be 'normal' if the count is less than 10, but 'danger' if the count is 10 or more:
+
+```html
+<div :class="count < 10 ? 'active' : 'danger'>
+    The count is <b @text=count></b>
+</div>
+```
 
 ## Magic Attributes
 
@@ -145,3 +159,31 @@ Alias: prepend the event name with `data-he-on`, for example `data-he-onclick="c
 ## Default Variables and Functions
 
 The helium function accepts a single JavaScript object as an argument. This can include default variable values and functions that can then be called inside the JavaScript expressions.
+
+For example, the following will set the `count` variable to an initial value of `29` and the `name` variable to "Helium":
+
+```javascript
+helium({ count: 29, name: "Helium"})
+```
+
+The following example shows how a function can be added into Helium and then used by even listeners:
+
+```javascript
+helium({ 
+    appendTo(element){
+        const li = document.createElement("li")
+        li.textContent = "New Item"
+        element.append(li)
+    }
+})
+
+```
+
+This function can then be called from an event handler, such as `@click`:
+
+```html
+<ul @ref="list"></ul>
+<button @click="appendTo($list)>Append item to list</button>
+```
+
+Note that Magic attributes and Helium variables are not available inside these functions and changing the value of a reactive variable will not trigger an update. They are best used for side effects (such as DOM manipulation) and to return data.
