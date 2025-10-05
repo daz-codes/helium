@@ -10,6 +10,8 @@ Here's a simple example of a button that counts the number of times it has been 
 </button>
 ```
 
+It's really simple to use - just sprinkle the magic @attributes into your HTML and watch it come alive!
+
 [See more examples here](https://codepen.io/daz4126/pen/YPwwdBK)
 
 To use, just import from the CDN then call the `helium` funtion (no install or build step required!):
@@ -32,7 +34,7 @@ import helium from "@daz4126/helium"
 helium()
 ```
 
-# Attributes
+# Helium Attributes
 
 Helium uses custom attributes to add interactivity to HTML elements. To identify them, they all start with `@`, although there are also `data` attribute aliases that can be used instead.
 
