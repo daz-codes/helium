@@ -77,7 +77,7 @@ Alias: `data-he-bind`
 Makes the element hidden or visible depending on the result of a JavaScript expression.
 
 ```html
-<div @hidden="count > 3">Only visible if the count is greater than 3</div>
+<div @visible="count > 3">Only visible if the count is greater than 3</div>
 ```
 
 Alias: `data-he-hidden` & `data-he-visible`
