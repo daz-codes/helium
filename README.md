@@ -145,7 +145,7 @@ It's possible to dynamically update the attributes of elements. To do this, just
 In the following example, the `<div>` element has a dynamic class attribute that will be 'normal' if the count is less than 10, but 'danger' if the count is 10 or more:
 
 ```html
-<div :class="count < 10 ? 'active' : 'danger'>
+<div :class="count < 10 ? 'normal' : 'danger'>
     The count is <b @text=count></b>
 </div>
 ```
