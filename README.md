@@ -222,6 +222,7 @@ helium({
         count += n
     }
 })
+```
 
 You should do this instead:
 
@@ -235,3 +236,4 @@ helium({
         data.count += n
     }
 })
+```
