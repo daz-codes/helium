@@ -5,6 +5,11 @@ export default function helium(data = {}) {
     document.body;
   const [bindings, refs] = [new Map(), new Map()];
   const $ = (selector) => document.querySelector(selector);
+  const html = (string) => {
+    const temp = document.createElement("template");
+    temp.innerHTML = string;
+    return temp.content.firstChild;
+  };
   const state = new Proxy(data, {
     get(target, prop) {
       return target[prop];
@@ -36,6 +41,7 @@ export default function helium(data = {}) {
         "$data",
         "$event",
         "$el",
+        "$html",
         ...Object.keys(data),
         ...[...refs.keys()],
         `with($data) { ${withReturn ? "return" : ""} (${expr.trim()}) }`,
@@ -90,6 +96,7 @@ export default function helium(data = {}) {
               state,
               {},
               el,
+              html,
               ...Object.values(data),
               ...[...refs.values()],
             ),
@@ -164,6 +171,7 @@ export default function helium(data = {}) {
             state,
             undefined,
             el,
+            html,
             ...Object.values(data),
             ...[...refs.values()],
           );
@@ -220,6 +228,7 @@ export default function helium(data = {}) {
                 state,
                 e,
                 el,
+                html,
                 ...Object.values(data),
                 ...[...refs.values()],
               );
@@ -247,3 +256,14 @@ export default function helium(data = {}) {
   }
   processElements(root);
 }
+
+helium({
+  appendTo: (el) =>
+    el.append(
+      html(`<p :class="count > 3 && 'danger'" @click=$el.remove()>OG!!</p>`),
+    ),
+  open: false,
+  placeholder: "test placehodler",
+  count: 0,
+  name: "",
+});
