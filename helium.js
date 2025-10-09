@@ -33,12 +33,12 @@ export default function helium(data = {}) {
     try {
       return new Function(
         "$",
-        "$state",
+        "$data",
         "$event",
         "$el",
         ...Object.keys(data),
         ...[...refs.keys()],
-        `with($state) { ${withReturn ? "return" : ""} (${expr.trim()}) }`,
+        `with($data) { ${withReturn ? "return" : ""} (${expr.trim()}) }`,
       );
     } catch (err) {
       return () => expr;
@@ -65,8 +65,6 @@ export default function helium(data = {}) {
     heliumElements.forEach((el) => {
       for (const { name, value } of el.attributes) {
         if (
-          name == "@react" ||
-          name == "data-he-react" ||
           name == "@text" ||
           name == "data-he-text" ||
           name == "@bind" ||
@@ -75,10 +73,7 @@ export default function helium(data = {}) {
           try {
             new Function(`let ${value} = 1`);
             state[value] ||=
-              name == "@react" ||
-              name == "data-he-react" ||
-              name == "@text" ||
-              name == "data-he-text"
+              name == "@text" || name == "data-he-text"
                 ? el.textContent
                 : el.value;
           } catch (e) {}
@@ -100,12 +95,7 @@ export default function helium(data = {}) {
             ),
           );
         if (name == "@ref" || name == "data-he-ref") refs.set("$" + value, el);
-        if (
-          name == "@react" ||
-          name == "data-he-react" ||
-          name == "@text" ||
-          name == "data-he-text"
-        )
+        if (name == "@text" || name == "data-he-text")
           Object.keys(state)
             .filter((key) => value.includes(key))
             .forEach((val) =>
@@ -181,10 +171,50 @@ export default function helium(data = {}) {
           const [eventName, ...modifiers] = name
             .slice(name.startsWith("@") ? 1 : 10)
             .split(".");
-          const receiver = modifiers.includes("outside") ? document : el;
-          receiver.addEventListener(eventName, function _handler(e) {
+          const receiver =
+            modifiers.includes("outside") || modifiers.includes("document")
+              ? document
+              : el;
+          const debounce = (fn, delay) => {
+            let timeout;
+            return function (...args) {
+              clearTimeout(timeout);
+              timeout = setTimeout(() => fn.apply(this, args), delay);
+            };
+          };
+
+          let debounceDelay = 0;
+          const debounceModifier = modifiers.find((m) =>
+            m.startsWith("debounce"),
+          );
+          if (debounceModifier) {
+            const time = debounceModifier.split(":")[1];
+            if (time && !isNaN(time)) debounceDelay = Number(time);
+            else debounceDelay = 300;
+          }
+
+          function _handler(e) {
             if (modifiers.includes("prevent")) e.preventDefault();
-            if (!modifiers.includes("outside") || !el.contains(e.target))
+            const keyModifiers = {
+              shift: "shiftKey",
+              ctrl: "ctrlKey",
+              alt: "altKey",
+              meta: "metaKey",
+            };
+            for (const [mod, prop] of Object.entries(keyModifiers)) {
+              if (modifiers.includes(mod) && !e[prop]) return;
+            }
+            if (["keydown", "keyup", "keypress"].includes(eventName)) {
+              const last = modifiers[modifiers.length - 1];
+              if (last) {
+                let keyName = e.key;
+                if (keyName === " ") keyName = "Space";
+                else if (keyName === "Escape") keyName = "Esc";
+                if (keyName.toLowerCase() !== last.toLowerCase()) return;
+              }
+            }
+
+            if (!modifiers.includes("outside") || !el.contains(e.target)) {
               compileExpression(value, false)(
                 $,
                 state,
@@ -193,9 +223,15 @@ export default function helium(data = {}) {
                 ...Object.values(data),
                 ...[...refs.values()],
               );
+            }
             if (modifiers.includes("once"))
-              el.removeEventListener(eventName, _handler);
-          });
+              el.removeEventListener(eventName, debouncedHandler);
+          }
+
+          const debouncedHandler =
+            debounceDelay > 0 ? debounce(_handler, debounceDelay) : _handler;
+
+          receiver.addEventListener(eventName, debouncedHandler);
         }
       }
     });
@@ -207,8 +243,7 @@ export default function helium(data = {}) {
       }
     });
     observer.observe(element, { childList: true, subtree: true });
-    for (const [key, items] of bindings.entries())
-      items.forEach((binding) => applyBinding(binding));
+    for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
   }
   processElements(root);
 }
