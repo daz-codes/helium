@@ -145,7 +145,7 @@ It's possible to dynamically update the attributes of elements. To do this, just
 In the following example, the `<div>` element has a dynamic class attribute that will be 'normal' if the count is less than 10, but 'danger' if the count is 10 or more:
 
 ```html
-<div :class="count < 10 ? 'active' : 'danger'>
+<div :class="count < 10 ? 'normal' : 'danger'>
     The count is <b @text=count></b>
 </div>
 ```
@@ -154,9 +154,30 @@ In the following example, the `<div>` element has a dynamic class attribute that
 
 `$` is an alias for `document.querySelector`
 
-`$el` is an alias for the element
 
-`$event` is an alias for the event object of an event handler
+```html
+<div @click="$('#header').classList.add('active')">Activate Header!</div>
+```
+
+`$el` is an alias for the element:
+
+```html
+<div @click="$el.remove()">Click to remove me!</div>
+```
+
+`$event` is an alias for the event object of an event handler:
+
+
+```html
+<div @click="console.log($event.timeStamp)">Log the timestamp</div>
+```
+
+`@data` gives you access to the data object that contains all the Helium variables:
+
+
+```html
+<div @click="console.log($data)">Log the data</div>
+```
 
 ## Default Variables and Functions
 
@@ -178,7 +199,6 @@ helium({
         element.append(li)
     }
 })
-
 ```
 
 This function can then be called from an event handler, such as `@click`:
@@ -188,4 +208,32 @@ This function can then be called from an event handler, such as `@click`:
 <button @click="appendTo($list)>Append item to list</button>
 ```
 
-Note that Magic attributes and Helium variables are not available inside these functions and changing the value of a reactive variable will not trigger an update. They are best used for side effects (such as DOM manipulation) and to return data.
+Note that magic attributes and Helium variables are not available inside these functions. However, you can pass them as arguments and they will then be available in the function. If you pass Helium variables then they will be passed as values and updating them inside the function will *not* trigger a reactive update. A solution is to pass the magic `$data` attribute as an argument, then updating the properties of this inside the function *will* trigger a reactive update.
+
+So instead of this:
+
+```html
+<button @click="increment(count)">Increment Count</button>
+```
+
+```javascript
+helium({ 
+    increment(count,n = 1){
+        count += n
+    }
+})
+```
+
+You should do this instead:
+
+```html
+<button @click="increment($data)">Increment Count</button>
+```
+
+```javascript
+helium({ 
+    increment(data,n = 1){
+        data.count += n
+    }
+})
+```
