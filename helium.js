@@ -28,7 +28,8 @@ export default function helium(data = {}) {
       state,
       event,
       elCtx,
-      ...Object.values(data),
+      html,
+      ...Object.values(state),
       ...[...refs.values()],
     );
     if (prop in el) el[prop] = result;
@@ -97,7 +98,7 @@ export default function helium(data = {}) {
               {},
               el,
               html,
-              ...Object.values(data),
+              ...Object.values(state),
               ...[...refs.values()],
             ),
           );
@@ -172,7 +173,7 @@ export default function helium(data = {}) {
             undefined,
             el,
             html,
-            ...Object.values(data),
+            ...Object.values(state),
             ...[...refs.values()],
           );
         else if (name.startsWith("@") || name.startsWith("data-he-on")) {
@@ -229,7 +230,7 @@ export default function helium(data = {}) {
                 e,
                 el,
                 html,
-                ...Object.values(data),
+                ...Object.values(state),
                 ...[...refs.values()],
               );
             }
