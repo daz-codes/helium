@@ -256,14 +256,4 @@ export default function helium(data = {}) {
   }
   processElements(root);
 }
-
-helium({
-  appendTo: (el) =>
-    el.append(
-      html(`<p :class="count > 3 && 'danger'" @click=$el.remove()>OG!!</p>`),
-    ),
-  open: false,
-  placeholder: "test placehodler",
-  count: 0,
-  name: "",
-});
+helium();
