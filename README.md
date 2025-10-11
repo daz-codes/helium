@@ -31,7 +31,6 @@ Then include it in your
 
 ```javascript
 import helium from "@daz4126/helium"
-helium()
 ```
 
 # Helium Attributes
