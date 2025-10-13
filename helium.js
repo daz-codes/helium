@@ -10,17 +10,43 @@ export default function helium(data = {}) {
     temp.innerHTML = string;
     return temp.content.firstChild;
   };
+
+  const ajax = (url, method, target, options) => {
+    fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: method === "GET" ? null : JSON.stringify(options),
+    })
+      .then((res) =>
+        res.headers.get("content-type")?.includes("application/json")
+          ? res.json()
+          : res.text(),
+      )
+      .then((data) => (state[target] = data));
+  };
+  const get = (url, prop) => ajax(url, "GET", prop);
+  const post = (url, params, prop) => ajax(url, "POST", prop, params);
+  const patch = (url, params, prop) => ajax(url, "PATCH", prop, params);
+  const del = (url, params, prop) => ajax(url, "DELETE", prop, params);
+
   const state = new Proxy(data, {
     get(target, prop) {
       return target[prop];
     },
     set(target, prop, value) {
+      // skip if identical (prevents redundant re-renders)
+      if (target[prop] === value) return true;
       target[prop] = value;
-      if (bindings.has(prop))
+      if (bindings.has(prop)) {
+        // only call the bindings for this prop
         bindings.get(prop).forEach((binding) => applyBinding(binding));
+      }
       return true;
     },
   });
+
+  let isUpdatingDOM = false;
+
   function applyBinding(binding, event = {}, elCtx = binding.el) {
     const { el, prop, fn } = binding;
     const result = fn(
@@ -29,12 +55,25 @@ export default function helium(data = {}) {
       event,
       elCtx,
       html,
-      ...Object.values(state),
+      get,
+      post,
+      patch,
+      del,
+      ...Object.values(data),
       ...[...refs.values()],
     );
-    if (prop in el) el[prop] = result;
-    else el.setAttribute(prop, result);
+    // guard to reduce observer recursion (optional but helpful)
+    if (prop === "innerHTML") {
+      isUpdatingDOM = true;
+      el.innerHTML = result;
+      isUpdatingDOM = false;
+    } else if (prop in el) {
+      el[prop] = result;
+    } else {
+      el.setAttribute(prop, result);
+    }
   }
+
   function compileExpression(expr, withReturn = false) {
     try {
       return new Function(
@@ -43,6 +82,10 @@ export default function helium(data = {}) {
         "$event",
         "$el",
         "$html",
+        "$get",
+        "$post",
+        "$patch",
+        "$delete",
         ...Object.keys(data),
         ...[...refs.keys()],
         `with($data) { ${withReturn ? "return" : ""} (${expr.trim()}) }`,
@@ -51,7 +94,23 @@ export default function helium(data = {}) {
       return () => expr;
     }
   }
+
+  // processElements now returns an array of newly-created binding objects
   function processElements(element) {
+    const newlyAddedBindings = [];
+
+    // quick guard: avoid re-processing same node
+    if (
+      element.nodeType === 1 &&
+      element.hasAttribute &&
+      element.hasAttribute("data-helium-processed")
+    ) {
+      return newlyAddedBindings;
+    }
+    if (element.nodeType === 1 && element.setAttribute) {
+      element.setAttribute("data-helium-processed", "");
+    }
+
     const heliumElements = [
       element,
       ...Array.from(element.querySelectorAll("*")).filter((el) =>
@@ -60,6 +119,7 @@ export default function helium(data = {}) {
         ),
       ),
     ];
+
     const xpath = document.evaluate(
       ".//*[@*[starts-with(name(), '@') or starts-with(name(), ':')]]",
       element,
@@ -69,8 +129,10 @@ export default function helium(data = {}) {
     );
     for (let i = 0; i < xpath.snapshotLength; i++)
       heliumElements.push(xpath.snapshotItem(i));
+
+    // seed default state values (no binding creation here)
     heliumElements.forEach((el) => {
-      for (const { name, value } of el.attributes) {
+      for (const { name, value } of el.attributes || []) {
         if (
           name == "@text" ||
           name == "data-he-text" ||
@@ -87,9 +149,11 @@ export default function helium(data = {}) {
         }
       }
     });
+
+    // Register bindings for these elements and collect the newly added binding objects
     heliumElements.forEach((el) => {
-      for (const { name, value } of el.attributes) {
-        if (name == "@data" || name == "data-he")
+      for (const { name, value } of el.attributes || []) {
+        if (name == "@data" || name == "data-he") {
           Object.assign(
             state,
             compileExpression(value, true)(
@@ -98,85 +162,107 @@ export default function helium(data = {}) {
               {},
               el,
               html,
-              ...Object.values(state),
+              get,
+              post,
+              patch,
+              del,
+              ...Object.values(data),
               ...[...refs.values()],
             ),
           );
+        }
         if (name == "@ref" || name == "data-he-ref") refs.set("$" + value, el);
-        if (name == "@text" || name == "data-he-text")
+
+        if (
+          name == "@text" ||
+          name == "data-he-text" ||
+          name == "@html" ||
+          name == "data-he-html"
+        ) {
           Object.keys(state)
             .filter((key) => value.includes(key))
-            .forEach((val) =>
-              bindings.set(val, [
-                ...(bindings.get(val) || []),
-                {
-                  el,
-                  prop: "textContent",
-                  expr: value,
-                  fn: compileExpression(value, true),
-                },
-              ]),
-            );
+            .forEach((val) => {
+              const b = {
+                el,
+                prop:
+                  name == "@text" || name == "data-he-text"
+                    ? "textContent"
+                    : "innerHTML",
+                expr: value,
+                fn: compileExpression(value, true),
+              };
+              bindings.set(val, [...(bindings.get(val) || []), b]);
+              newlyAddedBindings.push(b);
+            });
+        }
+
         if (name == "@bind" || name == "data-he-bind") {
           el.addEventListener("input", (e) => (state[value] = e.target.value));
-          bindings.set(value, [
-            ...(bindings.get(value) || []),
-            {
-              el,
-              prop: "value",
-              expr: value,
-              fn: compileExpression(value, true),
-            },
-          ]);
+          const b = {
+            el,
+            prop: "value",
+            expr: value,
+            fn: compileExpression(value, true),
+          };
+          bindings.set(value, [...(bindings.get(value) || []), b]);
+          newlyAddedBindings.push(b);
           el.value = state[value];
         }
+
         if (
           name == "@hidden" ||
           name == "@visible" ||
           name == "data-he-hidden" ||
           name == "data-he-visible"
-        )
+        ) {
           Object.keys(state)
             .filter((key) => value.includes(key))
-            .forEach((val) =>
-              bindings.set(val, [
-                ...(bindings.get(val) || []),
-                {
-                  el,
-                  prop: "hidden",
-                  expr: value,
-                  fn: compileExpression(
-                    `${name == "@hidden" || name == "data-he-hidden" ? "!" : ""}!(${value})`,
-                    true,
-                  ),
-                },
-              ]),
-            );
-        if (name.startsWith(":"))
+            .forEach((val) => {
+              const b = {
+                el,
+                prop: "hidden",
+                expr: value,
+                fn: compileExpression(
+                  `${name == "@hidden" || name == "data-he-hidden" ? "!" : ""}!(${value})`,
+                  true,
+                ),
+              };
+              bindings.set(val, [...(bindings.get(val) || []), b]);
+              newlyAddedBindings.push(b);
+            });
+        }
+
+        if (name.startsWith(":")) {
           Object.keys(state)
             .filter((key) => value.includes(key))
-            .forEach((val) =>
-              bindings.set(val, [
-                ...(bindings.get(val) || []),
-                {
-                  el,
-                  prop: name.split(":")[1],
-                  expr: value,
-                  fn: compileExpression(value, true),
-                },
-              ]),
-            );
-        if (name == "@init" || name == "data-he-init")
+            .forEach((val) => {
+              const b = {
+                el,
+                prop: name.split(":")[1],
+                expr: value,
+                fn: compileExpression(value, true),
+              };
+              bindings.set(val, [...(bindings.get(val) || []), b]);
+              newlyAddedBindings.push(b);
+            });
+        }
+
+        if (name == "@init" || name == "data-he-init") {
           compileExpression(value, false)(
             $,
             state,
             undefined,
             el,
             html,
-            ...Object.values(state),
+            get,
+            post,
+            patch,
+            del,
+            ...Object.values(data),
             ...[...refs.values()],
           );
-        else if (name.startsWith("@") || name.startsWith("data-he-on")) {
+        } else if (name.startsWith("@") || name.startsWith("data-he-on")) {
+          // event handling — keep this as before (register listeners)
           const [eventName, ...modifiers] = name
             .slice(name.startsWith("@") ? 1 : 10)
             .split(".");
@@ -230,7 +316,11 @@ export default function helium(data = {}) {
                 e,
                 el,
                 html,
-                ...Object.values(state),
+                get,
+                post,
+                patch,
+                del,
+                ...Object.values(data),
                 ...[...refs.values()],
               );
             }
@@ -240,21 +330,33 @@ export default function helium(data = {}) {
 
           const debouncedHandler =
             debounceDelay > 0 ? debounce(_handler, debounceDelay) : _handler;
-
           receiver.addEventListener(eventName, debouncedHandler);
         }
-      }
-    });
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node.nodeType === 1) processElements(node);
+      } // end attributes loop
+    }); // end heliumElements.forEach
+
+    return newlyAddedBindings;
+  } // end processElements
+
+  // set up mutation observer that only processes and applies bindings for newly added nodes
+  const observer = new MutationObserver((mutations) => {
+    if (isUpdatingDOM) return; // ignore mutations we caused directly
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (
+          node.nodeType === 1 &&
+          !node.hasAttribute("data-helium-processed")
+        ) {
+          const newly = processElements(node);
+          // apply only the bindings we just created for this node
+          newly.forEach(applyBinding);
         }
       }
-    });
-    observer.observe(element, { childList: true, subtree: true });
-    for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
-  }
-  processElements(root);
+    }
+  });
+  observer.observe(root, { childList: true, subtree: true });
+
+  const initialBindings = processElements(root);
+  for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
 }
 helium();
