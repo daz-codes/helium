@@ -3,6 +3,10 @@ export default function helium(data = {}) {
     document.querySelector("[\\@helium]") ||
     document.querySelector("[data-helium]") ||
     document.body;
+  if (Object.keys(data).length > 0)
+    document
+      .querySelectorAll("[data-helium-processed]")
+      .forEach((el) => el.removeAttribute("data-helium-processed"));
   const [bindings, refs] = [new Map(), new Map()];
   const $ = (selector) => document.querySelector(selector);
   const html = (string) => {
@@ -104,12 +108,10 @@ export default function helium(data = {}) {
       element.nodeType === 1 &&
       element.hasAttribute &&
       element.hasAttribute("data-helium-processed")
-    ) {
+    )
       return newlyAddedBindings;
-    }
-    if (element.nodeType === 1 && element.setAttribute) {
+    if (element.nodeType === 1 && element.setAttribute)
       element.setAttribute("data-helium-processed", "");
-    }
 
     const heliumElements = [
       element,
