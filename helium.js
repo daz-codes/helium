@@ -17,7 +17,6 @@ export default function helium(data = {}) {
   };
 
   const ajax = (url, method, target, options) => {
-    console.log(url, method, target, options);
     fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
