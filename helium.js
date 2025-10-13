@@ -1,3 +1,4 @@
+let ue = true;
 export default function helium(data = {}) {
   const root =
     document.querySelector("[\\@helium]") ||
@@ -16,6 +17,7 @@ export default function helium(data = {}) {
   };
 
   const ajax = (url, method, target, options) => {
+    console.log(url, method, target, options);
     fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
@@ -26,10 +28,13 @@ export default function helium(data = {}) {
           ? res.json()
           : res.text(),
       )
-      .then((data) => (state[target] = data));
+      .then((data) => {
+        state[target] = data;
+      });
   };
   const get = (url, prop) => ajax(url, "GET", prop);
   const post = (url, params, prop) => ajax(url, "POST", prop, params);
+  const put = (url, params, prop) => ajax(url, "PUT", prop, params);
   const patch = (url, params, prop) => ajax(url, "PATCH", prop, params);
   const del = (url, params, prop) => ajax(url, "DELETE", prop, params);
 
@@ -61,6 +66,7 @@ export default function helium(data = {}) {
       html,
       get,
       post,
+      put,
       patch,
       del,
       ...Object.values(data),
@@ -88,6 +94,7 @@ export default function helium(data = {}) {
         "$html",
         "$get",
         "$post",
+        "$put",
         "$patch",
         "$delete",
         ...Object.keys(data),
@@ -100,7 +107,7 @@ export default function helium(data = {}) {
   }
 
   // processElements now returns an array of newly-created binding objects
-  function processElements(element) {
+  function processElements(element, addEvents = ue) {
     const newlyAddedBindings = [];
 
     // quick guard: avoid re-processing same node
@@ -166,6 +173,7 @@ export default function helium(data = {}) {
               html,
               get,
               post,
+              put,
               patch,
               del,
               ...Object.values(data),
@@ -258,12 +266,16 @@ export default function helium(data = {}) {
             html,
             get,
             post,
+            put,
             patch,
             del,
             ...Object.values(data),
             ...[...refs.values()],
           );
-        } else if (name.startsWith("@") || name.startsWith("data-he-on")) {
+        } else if (
+          (name.startsWith("@") || name.startsWith("data-he-on")) &&
+          addEvents
+        ) {
           // event handling — keep this as before (register listeners)
           const [eventName, ...modifiers] = name
             .slice(name.startsWith("@") ? 1 : 10)
@@ -320,6 +332,7 @@ export default function helium(data = {}) {
                 html,
                 get,
                 post,
+                put,
                 patch,
                 del,
                 ...Object.values(data),
@@ -349,7 +362,7 @@ export default function helium(data = {}) {
           node.nodeType === 1 &&
           !node.hasAttribute("data-helium-processed")
         ) {
-          const newly = processElements(node);
+          const newly = processElements(node, false);
           // apply only the bindings we just created for this node
           newly.forEach(applyBinding);
         }
@@ -360,5 +373,7 @@ export default function helium(data = {}) {
 
   const initialBindings = processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
+  ue = false;
 }
+
 helium();
