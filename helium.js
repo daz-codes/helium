@@ -16,26 +16,26 @@ export default function helium(data = {}) {
     return temp.content.firstChild;
   };
 
-  const ajax = (url, method, target, options) => {
+  const ajax = (method, url, target, data) =>
     fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: method === "GET" ? null : JSON.stringify(options),
+      body: method === "GET" ? null : JSON.stringify(data),
     })
       .then((res) =>
-        res.headers.get("content-type")?.includes("application/json")
-          ? res.json()
-          : res.text(),
+        res[
+          res.headers.get("content-type")?.includes("json") ? "json" : "text"
+        ](),
       )
-      .then((data) => {
-        state[target] = data;
-      });
-  };
-  const get = (url, prop) => ajax(url, "GET", prop);
-  const post = (url, params, prop) => ajax(url, "POST", prop, params);
-  const put = (url, params, prop) => ajax(url, "PUT", prop, params);
-  const patch = (url, params, prop) => ajax(url, "PATCH", prop, params);
-  const del = (url, params, prop) => ajax(url, "DELETE", prop, params);
+      .then((result) => (state[target] = result));
+
+  const ax = (method) => (url, data, target) => ajax(method, url, target, data);
+
+  const get = ax("GET");
+  const post = ax("POST");
+  const put = ax("PUT");
+  const patch = ax("PATCH");
+  const del = ax("DELETE");
 
   const state = new Proxy(data, {
     get(target, prop) {
@@ -142,6 +142,8 @@ export default function helium(data = {}) {
     heliumElements.forEach((el) => {
       for (const { name, value } of el.attributes || []) {
         if (
+          name == "@html" ||
+          name == "data-he-html" ||
           name == "@text" ||
           name == "data-he-text" ||
           name == "@bind" ||
@@ -150,9 +152,9 @@ export default function helium(data = {}) {
           try {
             new Function(`let ${value} = 1`);
             state[value] ||=
-              name == "@text" || name == "data-he-text"
-                ? el.textContent
-                : el.value;
+              name == "@bind" || name == "data-he-bind"
+                ? el.value
+                : el.textContent;
           } catch (e) {}
         }
       }
