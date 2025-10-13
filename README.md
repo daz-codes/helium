@@ -14,11 +14,10 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 [See more examples here](https://codepen.io/daz4126/pen/YPwwdBK)
 
-To use, just import from the CDN then call the `helium` funtion (no install or build step required!):
+To use, just import from the CDN (no install or build step required!):
 
 ```javascript
 import helium from "https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js"
-helium()
 ```
 
 Alernatively you can install from NPM:
@@ -31,7 +30,6 @@ Then include it in your
 
 ```javascript
 import helium from "@daz4126/helium"
-helium()
 ```
 
 # Helium Attributes
