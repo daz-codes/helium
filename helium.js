@@ -16,26 +16,24 @@ export default function helium(data = {}) {
     return temp.content.firstChild;
   };
 
-  const ajax = (method, url, target, data) =>
-    fetch(url, {
-      method,
+  const ajax = (m, u, t, d) =>
+    fetch(u, {
+      method: m,
       headers: { "Content-Type": "application/json" },
-      body: method === "GET" ? null : JSON.stringify(data),
+      body: m == "GET" ? null : JSON.stringify(d),
     })
-      .then((res) =>
-        res[
-          res.headers.get("content-type")?.includes("json") ? "json" : "text"
-        ](),
+      .then((r) =>
+        r[r.headers.get("content-type")?.includes("json") ? "json" : "text"](),
       )
-      .then((result) => (state[target] = result));
+      .then((x) => (state[t] = x));
 
-  const ax = (method) => (url, data, target) => ajax(method, url, target, data);
-
-  const get = ax("GET");
-  const post = ax("POST");
-  const put = ax("PUT");
-  const patch = ax("PATCH");
-  const del = ax("DELETE");
+  const [get, post, put, patch, del] = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+  ].map((m) => (u, d, t) => ajax(m, u, t, d));
 
   const state = new Proxy(data, {
     get(target, prop) {
