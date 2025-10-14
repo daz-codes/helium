@@ -17,7 +17,7 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 To use, just import from the CDN (no install or build step required!):
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js" onload="helium()"></script>
+<script type="module">import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js';helium();</script>
 ```
 
 Alernatively you can install from NPM:
