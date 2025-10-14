@@ -1,13 +1,9 @@
-let ue = true;
 export default function helium(data = {}) {
+
   const root =
     document.querySelector("[\\@helium]") ||
     document.querySelector("[data-helium]") ||
     document.body;
-  if (Object.keys(data).length > 0)
-    document
-      .querySelectorAll("[data-helium-processed]")
-      .forEach((el) => el.removeAttribute("data-helium-processed"));
   const [bindings, refs] = [new Map(), new Map()];
   const $ = (selector) => document.querySelector(selector);
   const html = (string) => {
@@ -16,24 +12,25 @@ export default function helium(data = {}) {
     return temp.content.firstChild;
   };
 
-  const ajax = (m, u, t, d) =>
-    fetch(u, {
-      method: m,
+const ajax = (url, method, target, options) => {
+    fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
-      body: m == "GET" ? null : JSON.stringify(d),
+      body: method === "GET" ? null : JSON.stringify(options),
     })
-      .then((r) =>
-        r[r.headers.get("content-type")?.includes("json") ? "json" : "text"](),
-      )
-      .then((x) => (state[t] = x));
-
-  const [get, post, put, patch, del] = [
-    "GET",
+      .then((res) => res.headers.get("content-type")?.includes("application/json")
+          ? res.json()
+          : res.text())
+      .then((data) => state[target] = data)
+      .catch((err) => console.error("AJAX error:", err.message))
+}
+  const get = (u,t) => ajax(u,"GET",t)
+  const [post, put, patch, del] = [
     "POST",
     "PUT",
     "PATCH",
     "DELETE",
-  ].map((m) => (u, d, t) => ajax(m, u, t, d));
+  ].map((m) => (u, d, t) => ajax(u, m, t, d));
 
   const state = new Proxy(data, {
     get(target, prop) {
@@ -104,7 +101,7 @@ export default function helium(data = {}) {
   }
 
   // processElements now returns an array of newly-created binding objects
-  function processElements(element, addEvents = ue) {
+  function processElements(element) {
     const newlyAddedBindings = [];
 
     // quick guard: avoid re-processing same node
@@ -271,10 +268,7 @@ export default function helium(data = {}) {
             ...Object.values(data),
             ...[...refs.values()],
           );
-        } else if (
-          (name.startsWith("@") || name.startsWith("data-he-on")) &&
-          addEvents
-        ) {
+        } else if (name.startsWith("@") || name.startsWith("data-he-on")) {
           // event handling — keep this as before (register listeners)
           const [eventName, ...modifiers] = name
             .slice(name.startsWith("@") ? 1 : 10)
@@ -361,7 +355,7 @@ export default function helium(data = {}) {
           node.nodeType === 1 &&
           !node.hasAttribute("data-helium-processed")
         ) {
-          const newly = processElements(node, false);
+          const newly = processElements(node);
           // apply only the bindings we just created for this node
           newly.forEach(applyBinding);
         }
@@ -372,7 +366,4 @@ export default function helium(data = {}) {
 
   const initialBindings = processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
-  ue = false;
 }
-
-helium();
