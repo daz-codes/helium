@@ -14,7 +14,7 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 [See more examples here](https://codepen.io/daz4126/pen/YPwwdBK)
 
-To use, just import from the CDN (no install or build step required!):
+To use, just import from the CDN in a script tag directly in your HTML page (no install or build step required!):
 
 ```html
 <script type="module">import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js';helium();</script>
