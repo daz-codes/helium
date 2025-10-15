@@ -3,6 +3,11 @@
   "version": "0.7.2",
   "main": "helium.js",
   "type": "module",
+  "scripts": {
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run"
+  },
   "keywords": [
     "tiny",
     "reactive",
