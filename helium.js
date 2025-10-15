@@ -8,17 +8,24 @@ export default function helium(data = {}) {
     return t.content.firstChild;
   };
 
-  const ajax = (url, method, target, opts) => {
+  const ajax = (url, method, target, opts = {}) => {
     fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/vnd.turbo-stream.html, application/json, application/vnd.api+json, text/html, */*",
+        "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content || ""
+      },
       body: method === "GET" ? null : JSON.stringify(opts),
+      credentials: "same-origin"
     })
-      .then((r) => r.headers.get("content-type")?.includes("application/json") ? r.json() : r.text())
-      .then((d) => state[target] = d)
-      .catch((e) => console.error("AJAX error:", e.message))
-  }
-  
+      .then(r =>
+        r.headers.get("content-type")?.includes("application/json") ? r.json() : r.text()
+      )
+      .then(d => state[target] = d)
+      .catch(e => console.error("AJAX error:", e.message));
+  };
+
   const get = (u,t) => ajax(u,"GET",t);
   const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map((m) => (u, d, t) => ajax(u, m, t, d));
   
