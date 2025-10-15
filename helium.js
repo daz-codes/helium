@@ -1,72 +1,53 @@
 export default function helium(data = {}) {
-
-  const root =
-    document.querySelector("[\\@helium]") ||
-    document.querySelector("[data-helium]") ||
-    document.body;
+  const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   const [bindings, refs] = [new Map(), new Map()];
-  const $ = (selector) => document.querySelector(selector);
-  const html = (string) => {
-    const temp = document.createElement("template");
-    temp.innerHTML = string;
-    return temp.content.firstChild;
+  const $ = (s) => document.querySelector(s);
+  const html = (s) => {
+    const t = document.createElement("template");
+    t.innerHTML = s;
+    return t.content.firstChild;
   };
 
-const ajax = (url, method, target, options) => {
+  const ajax = (url, method, target, opts) => {
     fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: method === "GET" ? null : JSON.stringify(options),
+      body: method === "GET" ? null : JSON.stringify(opts),
     })
-      .then((res) => res.headers.get("content-type")?.includes("application/json")
-          ? res.json()
-          : res.text())
-      .then((data) => state[target] = data)
-      .catch((err) => console.error("AJAX error:", err.message))
-}
-  const get = (u,t) => ajax(u,"GET",t)
-  const [post, put, patch, del] = [
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-  ].map((m) => (u, d, t) => ajax(u, m, t, d));
-
-  const state = new Proxy(data, {
-    get(target, prop) {
-      return target[prop];
+      .then((r) => r.headers.get("content-type")?.includes("application/json") ? r.json() : r.text())
+      .then((d) => state[target] = d)
+      .catch((e) => console.error("AJAX error:", e.message))
+  }
+  
+  const get = (u,t) => ajax(u,"GET",t);
+  const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map((m) => (u, d, t) => ajax(u, m, t, d));
+  
+  const handler = {
+    get(target, prop, receiver) {
+      const val = Reflect.get(target, prop, receiver);
+      return typeof val === "object" && val !== null ? new Proxy(val, handler) : val;
     },
-    set(target, prop, value) {
-      // skip if identical (prevents redundant re-renders)
-      if (target[prop] === value) return true;
-      target[prop] = value;
-      if (bindings.has(prop)) {
-        // only call the bindings for this prop
-        bindings.get(prop).forEach((binding) => applyBinding(binding));
+    set(target, prop, val, receiver) {
+      const result = Reflect.set(target, prop, val, receiver);
+      if (target === data && bindings.has(prop)) {
+        bindings.get(prop).forEach(applyBinding);
+      } else {
+        for (const [key, bound] of bindings.entries()) {
+          if (key === Object.keys(data).find(k => data[k] === target)) {
+            bound.forEach(applyBinding);
+          }
+        }
       }
-      return true;
-    },
-  });
+      return result;
+    }
+  };
 
+  const state = new Proxy(data, handler);
   let isUpdatingDOM = false;
 
   function applyBinding(binding, event = {}, elCtx = binding.el) {
     const { el, prop, fn } = binding;
-    const result = fn(
-      $,
-      state,
-      event,
-      elCtx,
-      html,
-      get,
-      post,
-      put,
-      patch,
-      del,
-      ...Object.values(data),
-      ...[...refs.values()],
-    );
-    // guard to reduce observer recursion (optional but helpful)
+    const result = fn($, state, event, elCtx, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
     if (prop === "innerHTML") {
       isUpdatingDOM = true;
       el.innerHTML = result;
@@ -80,283 +61,132 @@ const ajax = (url, method, target, options) => {
 
   function compileExpression(expr, withReturn = false) {
     try {
-      return new Function(
-        "$",
-        "$data",
-        "$event",
-        "$el",
-        "$html",
-        "$get",
-        "$post",
-        "$put",
-        "$patch",
-        "$delete",
-        ...Object.keys(data),
-        ...[...refs.keys()],
-        `with($data) { ${withReturn ? "return" : ""} (${expr.trim()}) }`,
-      );
+      return new Function("$", "$data", "$event", "$el", "$html", "$get", "$post", "$put", "$patch", "$delete", 
+        ...Object.keys(data), ...[...refs.keys()],
+        `with($data) { ${withReturn ? "return" : ""} (${expr.trim()}) }`);
     } catch (err) {
       return () => expr;
     }
   }
 
-  // processElements now returns an array of newly-created binding objects
   function processElements(element) {
-    const newlyAddedBindings = [];
+    const newBindings = [];
+    if (element.nodeType === 1 && element.hasAttribute?.("data-helium-processed")) return newBindings;
+    if (element.nodeType === 1 && element.setAttribute) element.setAttribute("data-helium-processed", "");
 
-    // quick guard: avoid re-processing same node
-    if (
-      element.nodeType === 1 &&
-      element.hasAttribute &&
-      element.hasAttribute("data-helium-processed")
-    )
-      return newlyAddedBindings;
-    if (element.nodeType === 1 && element.setAttribute)
-      element.setAttribute("data-helium-processed", "");
+    const heElements = [element, ...Array.from(element.querySelectorAll("*")).filter((el) =>
+      Array.from(el.attributes).some((attr) => attr.name.startsWith("data-he-")))];
 
-    const heliumElements = [
-      element,
-      ...Array.from(element.querySelectorAll("*")).filter((el) =>
-        Array.from(el.attributes).some((attr) =>
-          attr.name.startsWith("data-he-"),
-        ),
-      ),
-    ];
+    const xpath = document.evaluate(".//*[@*[starts-with(name(), '@') or starts-with(name(), ':')]]",
+      element, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+    for (let i = 0; i < xpath.snapshotLength; i++) heElements.push(xpath.snapshotItem(i));
 
-    const xpath = document.evaluate(
-      ".//*[@*[starts-with(name(), '@') or starts-with(name(), ':')]]",
-      element,
-      null,
-      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-      null,
-    );
-    for (let i = 0; i < xpath.snapshotLength; i++)
-      heliumElements.push(xpath.snapshotItem(i));
-
-    // seed default state values (no binding creation here)
-    heliumElements.forEach((el) => {
+    // Seed default state values
+    heElements.forEach((el) => {
       for (const { name, value } of el.attributes || []) {
-        if (
-          name == "@html" ||
-          name == "data-he-html" ||
-          name == "@text" ||
-          name == "data-he-text" ||
-          name == "@bind" ||
-          name == "data-he-bind"
-        ) {
+        if (["@html","data-he-html","@text","data-he-text","@bind","data-he-bind"].includes(name)) {
           try {
             new Function(`let ${value} = 1`);
-            state[value] ||=
-              name == "@bind" || name == "data-he-bind"
-                ? el.value
-                : el.textContent;
+            state[value] ||= ["@bind","data-he-bind"].includes(name) ? el.value : el.textContent;
           } catch (e) {}
         }
       }
     });
 
-    // Register bindings for these elements and collect the newly added binding objects
-    heliumElements.forEach((el) => {
+    const execFn = (v) => compileExpression(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
+
+    // Register bindings
+    heElements.forEach((el) => {
       for (const { name, value } of el.attributes || []) {
-        if (name == "@data" || name == "data-he") {
-          Object.assign(
-            state,
-            compileExpression(value, true)(
-              $,
-              state,
-              {},
-              el,
-              html,
-              get,
-              post,
-              put,
-              patch,
-              del,
-              ...Object.values(data),
-              ...[...refs.values()],
-            ),
-          );
-        }
-        if (name == "@ref" || name == "data-he-ref") refs.set("$" + value, el);
+        if (["@data","data-he"].includes(name)) Object.assign(state, execFn(value));
+        if (["@ref","data-he-ref"].includes(name)) refs.set("$" + value, el);
 
-        if (
-          name == "@text" ||
-          name == "data-he-text" ||
-          name == "@html" ||
-          name == "data-he-html"
-        ) {
-          Object.keys(state)
-            .filter((key) => value.includes(key))
-            .forEach((val) => {
-              const b = {
-                el,
-                prop:
-                  name == "@text" || name == "data-he-text"
-                    ? "textContent"
-                    : "innerHTML",
-                expr: value,
-                fn: compileExpression(value, true),
-              };
-              bindings.set(val, [...(bindings.get(val) || []), b]);
-              newlyAddedBindings.push(b);
-            });
+        if (["@text","data-he-text","@html","data-he-html"].includes(name)) {
+          Object.keys(state).filter((k) => value.includes(k)).forEach((val) => {
+            const b = { el, prop: ["@text","data-he-text"].includes(name) ? "textContent" : "innerHTML", expr: value, fn: compileExpression(value, true) };
+            bindings.set(val, [...(bindings.get(val) || []), b]);
+            newBindings.push(b);
+          });
         }
 
-        if (name == "@bind" || name == "data-he-bind") {
+        if (["@bind","data-he-bind"].includes(name)) {
           el.addEventListener("input", (e) => (state[value] = e.target.value));
-          const b = {
-            el,
-            prop: "value",
-            expr: value,
-            fn: compileExpression(value, true),
-          };
+          const b = { el, prop: "value", expr: value, fn: compileExpression(value, true) };
           bindings.set(value, [...(bindings.get(value) || []), b]);
-          newlyAddedBindings.push(b);
+          newBindings.push(b);
           el.value = state[value];
         }
 
-        if (
-          name == "@hidden" ||
-          name == "@visible" ||
-          name == "data-he-hidden" ||
-          name == "data-he-visible"
-        ) {
-          Object.keys(state)
-            .filter((key) => value.includes(key))
-            .forEach((val) => {
-              const b = {
-                el,
-                prop: "hidden",
-                expr: value,
-                fn: compileExpression(
-                  `${name == "@hidden" || name == "data-he-hidden" ? "!" : ""}!(${value})`,
-                  true,
-                ),
-              };
-              bindings.set(val, [...(bindings.get(val) || []), b]);
-              newlyAddedBindings.push(b);
-            });
+        if (["@hidden","@visible","data-he-hidden","data-he-visible"].includes(name)) {
+          Object.keys(state).filter((k) => value.includes(k)).forEach((val) => {
+            const b = { el, prop: "hidden", expr: value, fn: compileExpression(`${["@hidden","data-he-hidden"].includes(name) ? "!" : ""}!(${value})`, true) };
+            bindings.set(val, [...(bindings.get(val) || []), b]);
+            newBindings.push(b);
+          });
         }
 
         if (name.startsWith(":")) {
-          Object.keys(state)
-            .filter((key) => value.includes(key))
-            .forEach((val) => {
-              const b = {
-                el,
-                prop: name.split(":")[1],
-                expr: value,
-                fn: compileExpression(value, true),
-              };
-              bindings.set(val, [...(bindings.get(val) || []), b]);
-              newlyAddedBindings.push(b);
-            });
+          Object.keys(state).filter((k) => value.includes(k)).forEach((val) => {
+            const b = { el, prop: name.split(":")[1], expr: value, fn: compileExpression(value, true) };
+            bindings.set(val, [...(bindings.get(val) || []), b]);
+            newBindings.push(b);
+          });
         }
 
-        if (name == "@init" || name == "data-he-init") {
-          compileExpression(value, false)(
-            $,
-            state,
-            undefined,
-            el,
-            html,
-            get,
-            post,
-            put,
-            patch,
-            del,
-            ...Object.values(data),
-            ...[...refs.values()],
-          );
+        if (["@init","data-he-init"].includes(name)) {
+          compileExpression(value, false)($, state, undefined, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
         } else if (name.startsWith("@") || name.startsWith("data-he-on")) {
-          // event handling — keep this as before (register listeners)
-          const [eventName, ...modifiers] = name
-            .slice(name.startsWith("@") ? 1 : 10)
-            .split(".");
-          const receiver =
-            modifiers.includes("outside") || modifiers.includes("document")
-              ? document
-              : el;
+          const [eventName, ...mods] = name.slice(name.startsWith("@") ? 1 : 10).split(".");
+          const receiver = mods.includes("outside") || mods.includes("document") ? document : el;
           const debounce = (fn, delay) => {
             let timeout;
-            return function (...args) {
+            return (...args) => {
               clearTimeout(timeout);
-              timeout = setTimeout(() => fn.apply(this, args), delay);
+              timeout = setTimeout(() => fn(...args), delay);
             };
           };
 
           let debounceDelay = 0;
-          const debounceModifier = modifiers.find((m) =>
-            m.startsWith("debounce"),
-          );
-          if (debounceModifier) {
-            const time = debounceModifier.split(":")[1];
-            if (time && !isNaN(time)) debounceDelay = Number(time);
-            else debounceDelay = 300;
+          const debounceMod = mods.find((m) => m.startsWith("debounce"));
+          if (debounceMod) {
+            const time = debounceMod.split(":")[1];
+            debounceDelay = time && !isNaN(time) ? Number(time) : 300;
           }
 
           function _handler(e) {
-            if (modifiers.includes("prevent")) e.preventDefault();
-            const keyModifiers = {
-              shift: "shiftKey",
-              ctrl: "ctrlKey",
-              alt: "altKey",
-              meta: "metaKey",
-            };
-            for (const [mod, prop] of Object.entries(keyModifiers)) {
-              if (modifiers.includes(mod) && !e[prop]) return;
+            if (mods.includes("prevent")) e.preventDefault();
+            const keyMods = { shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey" };
+            for (const [mod, prop] of Object.entries(keyMods)) {
+              if (mods.includes(mod) && !e[prop]) return;
             }
-            if (["keydown", "keyup", "keypress"].includes(eventName)) {
-              const last = modifiers[modifiers.length - 1];
+            if (["keydown","keyup","keypress"].includes(eventName)) {
+              const last = mods[mods.length - 1];
               if (last) {
-                let keyName = e.key;
-                if (keyName === " ") keyName = "Space";
-                else if (keyName === "Escape") keyName = "Esc";
+                let keyName = e.key === " " ? "Space" : e.key === "Escape" ? "Esc" : e.key;
                 if (keyName.toLowerCase() !== last.toLowerCase()) return;
               }
             }
-
-            if (!modifiers.includes("outside") || !el.contains(e.target)) {
-              compileExpression(value, false)(
-                $,
-                state,
-                e,
-                el,
-                html,
-                get,
-                post,
-                put,
-                patch,
-                del,
-                ...Object.values(data),
-                ...[...refs.values()],
-              );
+            if (!mods.includes("outside") || !el.contains(e.target)) {
+              compileExpression(value, false)($, state, e, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
             }
-            if (modifiers.includes("once"))
-              el.removeEventListener(eventName, debouncedHandler);
+            if (mods.includes("once")) el.removeEventListener(eventName, debouncedHandler);
           }
 
-          const debouncedHandler =
-            debounceDelay > 0 ? debounce(_handler, debounceDelay) : _handler;
+          const debouncedHandler = debounceDelay > 0 ? debounce(_handler, debounceDelay) : _handler;
           receiver.addEventListener(eventName, debouncedHandler);
         }
-      } // end attributes loop
-    }); // end heliumElements.forEach
+      }
+    });
 
-    return newlyAddedBindings;
-  } // end processElements
+    return newBindings;
+  }
 
-  // set up mutation observer that only processes and applies bindings for newly added nodes
   const observer = new MutationObserver((mutations) => {
-    if (isUpdatingDOM) return; // ignore mutations we caused directly
+    if (isUpdatingDOM) return;
     for (const m of mutations) {
       for (const node of m.addedNodes) {
-        if (
-          node.nodeType === 1 &&
-          !node.hasAttribute("data-helium-processed")
-        ) {
+        if (node.nodeType === 1 && !node.hasAttribute("data-helium-processed")) {
           const newly = processElements(node);
-          // apply only the bindings we just created for this node
           newly.forEach(applyBinding);
         }
       }
@@ -364,6 +194,6 @@ const ajax = (url, method, target, options) => {
   });
   observer.observe(root, { childList: true, subtree: true });
 
-  const initialBindings = processElements(root);
+  processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
 }
