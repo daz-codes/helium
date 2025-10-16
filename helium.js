@@ -76,7 +76,8 @@ export default function helium(data = {}) {
     } else if(prop == "style" && typeof(result) == "object"){
 el.style = Object.entries(result).map(([key, value]) => value ? `${key}: ${value};` : "").join``
       } else if (prop in el) {
-      el[prop] = result;
+        if(el.type == "radio") el.checked = el.value == result
+        else el[prop] = result
     } else {
       el.setAttribute(prop, result);
     }
@@ -132,13 +133,27 @@ el.style = Object.entries(result).map(([key, value]) => value ? `${key}: ${value
           });
         }
 
-        if (["@bind","data-he-bind"].includes(name)) {
-          el.addEventListener("input", (e) => (state[value] = e.target.value));
-          const b = { el, prop: "value", expr: value, fn: compileExpression(value, true) };
-          bindings.set(value, [...(bindings.get(value) || []), b]);
-          newBindings.push(b);
-          el.value = state[value];
-        }
+        if (["@bind", "data-he-bind"].includes(name)) {
+  const inputType = el.type?.toLowerCase();
+  const isCheckbox = inputType === "checkbox";
+  const event = (isCheckbox || el.tagName === "SELECT") ? "change" : "input";
+  const prop = isCheckbox ? "checked" : "value";
+  el.addEventListener(event, (e) => {
+    state[value] = isCheckbox ? e.target.checked : e.target.value;
+  });
+  
+  const b = { el, prop, expr: value, fn: compileExpression(value, true) };
+
+  bindings.set(value, [...(bindings.get(value) || []), b]);
+
+  newBindings.push(b);
+  
+  if (isCheckbox) {
+    el.checked = !!state[value];
+  } else if (inputType != "radio") {
+    el.value = state[value] ?? "";
+  }
+}
 
         if (["@hidden","@visible","data-he-hidden","data-he-visible"].includes(name)) {
           Object.keys(state).filter((k) => value.includes(k)).forEach((val) => {
