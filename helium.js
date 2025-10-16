@@ -9,10 +9,7 @@ export default function helium(data = {}) {
   };
 
   const ajax = (url, method, target, opts = {}) => {  
-    const headers = {
-    "Content-Type": "application/json",
-    "Accept": "text/vnd.turbo-stream.html,application/json,text/html"
-    };
+    const headers = {"Content-Type": "application/json"};
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     if (token) headers["X-CSRF-Token"] = token;
     
@@ -68,7 +65,7 @@ export default function helium(data = {}) {
       el.classList.add(...add);
       el.classList.remove(...remove);
     } else if(prop == "style" && typeof result == "object"){
-      el.style = Object.entries(result).map(([k, v]) => v ? `${k}:${v}` : "").join(";");
+      el.style = Object.entries(result).filter(([k, v]) => v).map(([k, v]) => `${k}:${v}`).join(";");
     } else if (prop in el) {
       if(el.type == "radio") el.checked = el.value == result;
       else el[prop] = result;
@@ -147,18 +144,20 @@ export default function helium(data = {}) {
         if (["@bind", "data-he-bind"].includes(name)) {
           const inputType = el.type?.toLowerCase();
           const isCheckbox = inputType === "checkbox";
-          const event = (isCheckbox || el.tagName === "SELECT") ? "change" : "input";
+          const isRadio = inputType === "radio";
+          const event = (isCheckbox || isRadio || el.tagName === "SELECT") ? "change" : "input";
           const prop = isCheckbox ? "checked" : "value";
           
-          const handler = e => state[value] = isCheckbox ? e.target.checked : e.target.value;
-          el.addEventListener(event, handler);
+          const inputHandler = e => state[value] = isCheckbox ? e.target.checked : e.target.value;
+          el.addEventListener(event, inputHandler);
           if (!listeners.has(el)) listeners.set(el, []);
-          listeners.get(el).push({receiver: el, eventName: event, handler});
+          listeners.get(el).push({receiver: el, eventName: event, handler: inputHandler});
           
           addBinding(value, { el, prop, expr: value, fn: compile(value, true) });
           
           if (isCheckbox) el.checked = !!state[value];
-          else if (inputType != "radio") el.value = state[value] ?? "";
+          else if (isRadio) el.checked = el.value == state[value];
+          else el.value = state[value] ?? "";
         }
 
         if (["@hidden","@visible","data-he-hidden","data-he-visible"].includes(name)) {
