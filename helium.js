@@ -55,11 +55,23 @@ export default function helium(data = {}) {
   function applyBinding(binding, event = {}, elCtx = binding.el) {
     const { el, prop, fn } = binding;
     const result = fn($, state, event, elCtx, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
-    if (prop === "innerHTML") {
+    if (prop == "innerHTML") {
       isUpdatingDOM = true;
       el.innerHTML = result;
       isUpdatingDOM = false;
-    } else if (prop in el) {
+    } else if(prop == "class" && typeof(result) == "object"){ 
+      const add = [];
+      const remove = [];
+
+      for (const [key, value] of Object.entries(result)) {
+        (value ? add : remove).push(key);
+      }
+
+      el.classList.add(...add);
+      el.classList.remove(...remove);
+    } else if(prop == "style" && typeof(result) == "object"){
+el.style = Object.entries(result).map(([key, value]) => value ? `${key}: ${value};` : "").join``
+      } else if (prop in el) {
       el[prop] = result;
     } else {
       el.setAttribute(prop, result);
@@ -100,10 +112,10 @@ export default function helium(data = {}) {
       }
     });
 
-    const execFn = (v) => compileExpression(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
 
     // Register bindings
     heElements.forEach((el) => {
+       const execFn = (v) => compileExpression(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
       for (const { name, value } of el.attributes || []) {
         if (["@data","data-he"].includes(name)) Object.assign(state, execFn(value));
         if (["@ref","data-he-ref"].includes(name)) refs.set("$" + value, el);
