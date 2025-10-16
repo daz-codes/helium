@@ -8,14 +8,18 @@ export default function helium(data = {}) {
     return t.content.firstChild;
   };
 
-  const ajax = (url, method, target, opts = {}) => {
+  const ajax = (url, method, target, opts = {}) => {  
+    const headers = {
+      "Content-Type": "application/json",
+      "Accept": "text/vnd.turbo-stream.html, application/json, application/vnd.api+json, text/html, */*"
+    };
+    
+    // Only add CSRF token if it exists
+    if (document.querySelector('meta[name="csrf-token"]')?.content) headers["X-CSRF-Token"] = csrfToken;
+    
     fetch(url, {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/vnd.turbo-stream.html, application/json, application/vnd.api+json, text/html, */*",
-        "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content || ""
-      },
+      headers,
       body: method === "GET" ? null : JSON.stringify(opts),
       credentials: "same-origin"
     })
