@@ -104,12 +104,11 @@ export default function helium(data = {}) {
       element.setAttribute("data-helium-processed", "");
     }
 
-    const heElements = [element, ...Array.from(element.querySelectorAll("*")).filter(el =>
-      Array.from(el.attributes).some(attr => attr.name.startsWith("data-he-")))];
-
-    const xpath = document.evaluate(".//*[@*[starts-with(name(), '@') or starts-with(name(), ':')]]",
-      element, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-    for (let i = 0; i < xpath.snapshotLength; i++) heElements.push(xpath.snapshotItem(i));
+    const heElements = [element, ...element.querySelectorAll("*")].filter(el =>
+      Array.from(el.attributes).some(attr => 
+        attr.name.startsWith("@") || attr.name.startsWith(":") || attr.name.startsWith("data-he-")
+      )
+    );
 
     // Seed default state values
     heElements.forEach(el => {
