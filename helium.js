@@ -13,9 +13,9 @@ export default function helium(data = {}) {
       "Content-Type": "application/json",
       "Accept": "text/vnd.turbo-stream.html, application/json, application/vnd.api+json, text/html, */*"
     };
-    
     // Only add CSRF token if it exists
-    if (document.querySelector('meta[name="csrf-token"]')?.content) headers["X-CSRF-Token"] = csrfToken;
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
     
     fetch(url, {
       method,
@@ -235,3 +235,4 @@ el.style = Object.entries(result).map(([key, value]) => value ? `${key}: ${value
   processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
 }
+helium()
