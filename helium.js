@@ -1,6 +1,6 @@
 export default function helium(data = {}) {
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
-  const [bindings, refs, listeners] = [new Map(), new Map(), new WeakMap()];
+  const [bindings, refs, listeners, proxyCache] = [new Map(), new Map(), new WeakMap(), new WeakMap()];
   const $ = (s) => document.querySelector(s);
   const html = (s) => {
     const t = document.createElement("template");
@@ -33,7 +33,11 @@ export default function helium(data = {}) {
   const handler = {
     get(target, prop, receiver) {
       const val = Reflect.get(target, prop, receiver);
-      return typeof val === "object" && val !== null ? new Proxy(val, handler) : val;
+      if (typeof val === "object" && val !== null) {
+        if (!proxyCache.has(val)) proxyCache.set(val, new Proxy(val, handler));
+        return proxyCache.get(val);
+      }
+      return val;
     },
     set(target, prop, val, receiver) {
       const result = Reflect.set(target, prop, val, receiver);
