@@ -9,7 +9,10 @@ export default function helium(data = {}) {
   };
 
   const ajax = (url, method, target, opts = {}) => {  
-    const headers = {"Content-Type": "application/json"};
+    const headers = {
+      "Content-Type": "application/json",
+      "Accept": "text/vnd.turbo-stream.html,application/json,text/html"
+    };
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     if (token) headers["X-CSRF-Token"] = token;
     
@@ -84,6 +87,30 @@ export default function helium(data = {}) {
     }
   };
 
+  // Track which state properties an expression depends on
+  const trackDependencies = (fn, el) => {
+    const accessed = new Set();
+    const trackingHandler = {
+      get(target, prop, receiver) {
+        if (prop !== Symbol.toStringTag && typeof prop === 'string') {
+          accessed.add(prop);
+        }
+        const val = Reflect.get(target, prop, receiver);
+        return typeof val === "object" && val !== null ? new Proxy(val, trackingHandler) : val;
+      }
+    };
+    
+    const trackingProxy = new Proxy(data, trackingHandler);
+    
+    try {
+      fn($, trackingProxy, {}, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
+    } catch (e) {
+      // Expression might fail on first run, that's ok
+    }
+    
+    return [...accessed];
+  };
+
   const cleanup = (el) => {
     const clean = (e) => {
       if (listeners.has(e)) {
@@ -135,9 +162,11 @@ export default function helium(data = {}) {
         if (["@ref","data-he-ref"].includes(name)) refs.set("$" + value, el);
 
         if (["@text","data-he-text","@html","data-he-html"].includes(name)) {
-          Object.keys(state).filter(k => value.includes(k)).forEach(val => {
-            addBinding(val, { el, prop: ["@text","data-he-text"].includes(name) ? "textContent" : "innerHTML", expr: value, fn: compile(value, true) });
-          });
+          const fn = compile(value, true);
+          const deps = trackDependencies(fn, el);
+          const b = { el, prop: ["@text","data-he-text"].includes(name) ? "textContent" : "innerHTML", expr: value, fn };
+          
+          deps.forEach(dep => addBinding(dep, b));
         }
 
         if (["@bind", "data-he-bind"].includes(name)) {
@@ -160,15 +189,19 @@ export default function helium(data = {}) {
         }
 
         if (["@hidden","@visible","data-he-hidden","data-he-visible"].includes(name)) {
-          Object.keys(state).filter(k => value.includes(k)).forEach(val => {
-            addBinding(val, { el, prop: "hidden", expr: value, fn: compile(`${["@hidden","data-he-hidden"].includes(name) ? "!" : ""}!(${value})`, true) });
-          });
+          const fn = compile(`${["@hidden","data-he-hidden"].includes(name) ? "!" : ""}!(${value})`, true);
+          const deps = trackDependencies(fn, el);
+          const b = { el, prop: "hidden", expr: value, fn };
+          
+          deps.forEach(dep => addBinding(dep, b));
         }
 
         if (name.startsWith(":")) {
-          Object.keys(state).filter(k => value.includes(k)).forEach(val => {
-            addBinding(val, { el, prop: name.slice(1), expr: value, fn: compile(value, true) });
-          });
+          const fn = compile(value, true);
+          const deps = trackDependencies(fn, el);
+          const b = { el, prop: name.slice(1), expr: value, fn };
+          
+          deps.forEach(dep => addBinding(dep, b));
         }
 
         if (["@init","data-he-init"].includes(name)) {
