@@ -1,5 +1,5 @@
 export default function helium(data = {}) {
-  const he = (...args) => args.flatMap(b => [`@${b}`,`data-he-${b}`])
+  const he = (name,...args) => args.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${name}|`)
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   const [bindings, refs, listeners] = [new Map(), new Map(), new WeakMap()];
   const $ = (s) => document.querySelector(s);
@@ -20,7 +20,7 @@ export default function helium(data = {}) {
     fetch(url, {
       method,
       headers,
-      body: method === "GET" ? null : JSON.stringify(opts),
+      body: method == "GET" ? null : JSON.stringify(opts),
       credentials: "same-origin"
     })
       .then(r => r.headers.get("content-type")?.includes("application/json") ? r.json() : r.text())
@@ -34,7 +34,7 @@ export default function helium(data = {}) {
   const handler = {
       get(target, prop, receiver) {
         const val = Reflect.get(target, prop, receiver);
-        return typeof val === "object" && val !== null ? new Proxy(val, handler) : val;
+        return typeof val == "object" && val != null ? new Proxy(val, handler) : val;
       },
       set(target, prop, val) {
         const result = Reflect.set(target, prop, val);
@@ -51,7 +51,7 @@ export default function helium(data = {}) {
     const result = fn($, state, event, elCtx, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
     if (prop == "innerHTML") {
       isUpdatingDOM = true;
-      el.innerHTML = result;
+      el.innerHTML = Array.isArray(result) ? result.join`` : result;
       isUpdatingDOM = false;
     } else if(prop == "class" && typeof result == "object"){ 
       Object.entries(result).forEach(([k, v]) => el.classList.toggle(k, v));
@@ -79,9 +79,9 @@ const trackDependencies = (fn, el) => {
     const accessed = new Set();
     const trackProxy = new Proxy(data, {
       get(target, prop) {
-        if (typeof prop === 'string') accessed.add(prop);
+        if (typeof prop == 'string') accessed.add(prop);
         const val = target[prop];
-        return typeof val === "object" && val !== null ? new Proxy(val, this) : val;
+        return typeof val == "object" && val != null ? new Proxy(val, this) : val;
       }
     });
     
@@ -99,7 +99,7 @@ const trackDependencies = (fn, el) => {
 
   function processElements(element) {
     const newBindings = [];
-    if (element.nodeType === 1) {
+    if (element.nodeType == 1) {
       if (element.hasAttribute?.("data-he-p")) return newBindings;
       element.setAttribute("data-he-p", "");
     }
@@ -112,10 +112,11 @@ const trackDependencies = (fn, el) => {
     // Seed default state values
     heElements.forEach(el => {
       for (const { name, value } of el.attributes || []) {
-        if (he("text","html","bind").includes(name)) {
+        if (he(name,"text","html","bind")) {
           try {
             new Function(`let ${value}=1`);
-            state[value] ||= he("bind").includes(name) ? el.type == "checkbox" ? el.checked : el.value : el.textContent;
+            const val = he(name,"bind") ? el.type == "checkbox" ? el.checked : el.value : el.textContent;
+            state[value] ||= Number.isNaN(Number(val)) ? val : Number(val);
           } catch (e) {}
         }
       }
@@ -131,19 +132,18 @@ const trackDependencies = (fn, el) => {
       const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
       for (const { name, value } of el.attributes || []) {
         if (["@data","data-he"].includes(name)) Object.assign(state, execFn(value));
-        if (he("ref").includes(name)) refs.set("$" + value, el);
-
-        if (he("text","html").includes(name)) {
+        if (he(name,"ref")) refs.set("$" + value, el);
+        if (he(name,"text","html")) {
           const fn = compile(value, true);
-          const b = { el, prop: he("text").includes(name) ? "textContent" : "innerHTML", fn };
+          const b = { el, prop: he(name,"text") ? "textContent" : "innerHTML", fn };
           trackDependencies(fn, el).forEach(dep => addBinding(dep, b));
         }
 
-        if (he("bind").includes(name)) {
+        if (he(name,"bind")) {
           const inputType = el.type?.toLowerCase();
-          const isCheckbox = inputType === "checkbox";
-          const isRadio = inputType === "radio";
-          const event = (isCheckbox || isRadio || el.tagName === "SELECT") ? "change" : "input";
+          const isCheckbox = inputType == "checkbox";
+          const isRadio = inputType == "radio";
+          const event = (isCheckbox || isRadio || el.tagName == "SELECT") ? "change" : "input";
           const prop = isCheckbox ? "checked" : "value";
           
           const inputHandler = e => state[value] = isCheckbox ? e.target.checked : e.target.value;
@@ -158,8 +158,8 @@ const trackDependencies = (fn, el) => {
           else el.value = state[value] ?? "";
         }
 
-        if (he("hidden","visible").includes(name)) {
-          const fn = compile(`${he("hidden").includes(name) ? "!" : ""}!(${value})`, true);
+        if (he(name,"hidden","visible")) {
+          const fn = compile(`${he(name,"hidden") ? "!" : ""}!(${value})`, true);
           const b = { el, prop: "hidden", fn };
           
           trackDependencies(fn, el).forEach(dep => addBinding(dep, b));
@@ -171,12 +171,11 @@ const trackDependencies = (fn, el) => {
           trackDependencies(fn, el).forEach(dep => addBinding(dep, b));
         }
 
-        if (he("init").includes(name)) {
+        if (he(name,"init")) {
           compile(value, false)($, state, undefined, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
         } else if (name.startsWith("@") || name.startsWith("data-he-on")) {
           const [eventName, ...mods] = name.slice(name.startsWith("@") ? 1 : 10).split(".");
           const receiver = mods.includes("outside") || mods.includes("document") ? document : el;
-          
           let debounceDelay = 0;
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           if (debounceMod) {
@@ -193,7 +192,7 @@ const trackDependencies = (fn, el) => {
             if (["keydown","keyup","keypress"].includes(eventName)) {
               const last = mods[mods.length - 1];
               if (last) {
-                let keyName = e.key === " " ? "Space" : e.key === "Escape" ? "Esc" : e.key;
+                let keyName = e.key == " " ? "Space" : e.key == "Escape" ? "Esc" : e.key;
                 if (keyName.toLowerCase() !== last.toLowerCase()) return;
               }
             }
@@ -226,10 +225,10 @@ const trackDependencies = (fn, el) => {
     if (isUpdatingDOM) return;
     for (const m of mutations) {
       for (const node of m.removedNodes) {
-        if (node.nodeType === 1) cleanup(node);
+        if (node.nodeType == 1) cleanup(node);
       }
       for (const node of m.addedNodes) {
-        if (node.nodeType === 1 && !node.hasAttribute("data-he-p")) {
+        if (node.nodeType == 1 && !node.hasAttribute("data-he-p")) {
           processElements(node).forEach(applyBinding);
         }
       }
