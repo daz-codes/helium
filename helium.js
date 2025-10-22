@@ -1,6 +1,6 @@
-const parseEx = v => {try {return new Function(`return (${v})`)()}catch{return v}}
-const getEvent = el => ({FORM:"submit",INPUT:"input",TEXTAREA:"input",SELECT:"change"}[el.tagName]||"click")
-const debounce = (fn, delay) => {let t; return (...a) => {clearTimeout(t); t = setTimeout(() => fn(...a), delay)}}
+const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
+const getEvent = el => ({form:"submit",input:"input",textarea:"input",select:"change"}[el.tagName.toLowerCase()]||"click")
+const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
 
 export default function helium(data = {}) {
   const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split('.')[0]}|`);
@@ -9,29 +9,22 @@ export default function helium(data = {}) {
   const $ = s => document.querySelector(s);
   const html = s => {const t = document.createElement("template"); t.innerHTML = s.trim(); return t.content.firstChild};
 
-  const ajax = (url, method, options={}, params = {}) => {
-    const isFormData = params instanceof FormData;
-    const token = document.querySelector('meta[name="csrf-token"]')?.content;
-    fetch(url, {
-      method,
-      headers: {
-        Accept: "text/vnd.turbo-stream.html,application/json,text/html",
-        ...(!isFormData && method !== "GET" && {"Content-Type": "application/json"}),
-        ...(token && {"X-CSRF-Token": token})
-      },
-      body: method === "GET" ? null : (isFormData ? params : JSON.stringify(params)),
-      credentials: "same-origin"
-    })
-    .then(r => r.headers.get("content-type")?.includes("application/json") ? r.json() : r.text())
-    .then(d => {
-      if (options.data) state[options.data] = d;
-      if (options.target) {
-        const content = options.template ? options.template(d) : d;
-        options.action ? options.target[options.action == "replace" ? "replaceWith" : options.action](html(content)) : options.target.innerHTML = content;
-      }
-    })
-    .catch(e => console.error("AJAX error:", e.message));
-  };
+const ajax=(u,m,o={},p={})=>{
+  const fd=p instanceof FormData,t=document.querySelector('meta[name="csrf-token"]')?.content;
+  fetch(u,{method:m,headers:{
+    Accept:"text/vnd.turbo-stream.html,application/json,text/html",
+    ...(!fd&&m!=="GET"&&{"Content-Type":"application/json"}),
+    ...(t&&{"X-CSRF-Token":t})
+  },body:m==="GET"?null:(fd?p:JSON.stringify(p)),credentials:"same-origin"})
+  .then(r=>r.headers.get("content-type")?.includes("json")?r.json():r.text())
+  .then(d=>{
+    if(o.data)state[o.data]=d;
+    if(o.target){
+      const c=o.template?o.template(d):d;
+      o.action?o.target[o.action=="replace"?"replaceWith":o.action](html(c)):o.target.innerHTML=c;
+    }
+  }).catch(e=>console.error("AJAX:",e.message))
+}
   
   const handler = {
     get: (t, p, r) => {const v = Reflect.get(t, p, r); return typeof v == "object" && v != null ? new Proxy(v, handler) : v},
@@ -41,22 +34,15 @@ export default function helium(data = {}) {
   const state = new Proxy(data, handler);
   let isUpdatingDOM = false;
 
-  function applyBinding(binding, event = {}, elCtx = binding.el) {
-    const {el, prop, fn} = binding;
-    const result = fn($, state, event, elCtx, html, ...Object.values(data), ...[...refs.values()]);
-    if (prop == "innerHTML") {
-      isUpdatingDOM = true;
-      el.innerHTML = Array.isArray(result) ? result.join`` : result;
-      isUpdatingDOM = false;
-    } else if (prop == "class" && typeof result == "object") {
-      Object.entries(result).forEach(([k, v]) => el.classList.toggle(k, v));
-    } else if (prop == "style" && typeof result == "object") {
-      el.style = Object.entries(result).filter(([k, v]) => v).map(([k, v]) => `${k}:${v}`).join(";");
-    } else if (prop in el) {
-      if (el.type == "radio") el.checked = el.value == result;
-      else el[prop] = prop == "textContent" ? result : parseEx(result);
-    } else el.setAttribute(prop, parseEx(result));
-  }
+function applyBinding(b,e={},elCtx=b.el){
+  const {el,prop,fn}=b;
+  const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
+  if(prop=="innerHTML"){isUpdatingDOM=1;el.innerHTML=Array.isArray(r)?r.join``:r;isUpdatingDOM=0}
+  else if(prop=="class"&&r&&typeof r=="object")for(const[k,v]of Object.entries(r))k.split(/\s+/).forEach(c=>el.classList.toggle(c,v));
+  else if(prop=="style"&&r&&typeof r=="object")el.style=Object.entries(r).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(";")
+  else if(prop in el){if(el.type=="radio")el.checked=el.value==r;else el[prop]=prop=="textContent"?r:parseEx(r)}
+  else el.setAttribute(prop,parseEx(r))
+}
 
   const compile = (expr, withReturn = false) => {
     try {
@@ -65,18 +51,10 @@ export default function helium(data = {}) {
     } catch {return () => expr}
   };
 
-  const trackDependencies = (fn, el) => {
-    const accessed = new Set();
-    const trackProxy = new Proxy(data, {
-      get(t, p) {
-        if (typeof p == 'string') accessed.add(p);
-        const v = t[p];
-        return typeof v == "object" && v != null ? new Proxy(v, this) : v;
-      }
-    });
-    try {fn.call(null, $, trackProxy, refs)} catch {}
-    return [...accessed];
-  };
+const trackDependencies=fn=>{
+  const s=new Set(),p=new Proxy(data,{get:(t,k)=>{if(typeof k=="string")s.add(k);const v=t[k];return v&&typeof v=="object"?new Proxy(v,this):v}});
+  try{fn($,p,refs)}catch{};return[...s]
+}
 
   const cleanup = el => {
     [el, ...el.querySelectorAll('*')].forEach(e => {
@@ -92,9 +70,7 @@ export default function helium(data = {}) {
       element.setAttribute("data-he-p", "");
     }
 
-    const heElements = [element, ...element.querySelectorAll("*")].filter(el =>
-      Array.from(el.attributes).some(attr => /^(@|:|data-he)/.test(attr.name))
-    );
+    const heElements=[element,...element.querySelectorAll("*")].filter(e=>[...e.attributes].some(a=>/^(@|:|data-he)/.test(a.name)))
 
     heElements.forEach(el => {
       for (const {name, value} of el.attributes || []) {
@@ -159,8 +135,7 @@ export default function helium(data = {}) {
           const [eventName, ...mods] = fullName.split(".");
           const isHttpMethod = ["get","post","put","patch","delete"].includes(eventName);
           const event = isHttpMethod ? getEvent(el) : eventName;
-          const receiver = mods.includes("outside") || mods.includes("document") ? document : el;
-          
+          const receiver = mods.includes("outside") || mods.includes("document") ? document : el; 
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
 
@@ -208,14 +183,13 @@ export default function helium(data = {}) {
     return newBindings;
   }
 
-  const observer = new MutationObserver(mutations => {
-    if (isUpdatingDOM) return;
-    for (const m of mutations) {
-      for (const node of m.removedNodes) if (node.nodeType == 1) cleanup(node);
-      for (const node of m.addedNodes) if (node.nodeType == 1 && !node.hasAttribute("data-he-p")) processElements(node).forEach(applyBinding);
-    }
-  });
-  observer.observe(root, {childList: true, subtree: true});
+  new MutationObserver(ms=>{
+  if(isUpdatingDOM)return;
+  for(const m of ms){
+    m.removedNodes.forEach(n=>n.nodeType==1&&cleanup(n));
+    m.addedNodes.forEach(n=>n.nodeType==1&&!n.hasAttribute("data-he-p")&&processElements(n).forEach(applyBinding));
+  }
+}).observe(root,{childList:1,subtree:1});
 
   processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
