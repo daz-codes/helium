@@ -9,62 +9,65 @@ export default function helium(data = {}) {
   const $ = s => document.querySelector(s);
   const html = s => Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild
 
-const ajax=(u,m,o={},p={})=>{
-  console.log("ajax: ", u,m,o.target,p)
-  const fd=p instanceof FormData,t=document.querySelector('meta[name="csrf-token"]')?.content;
-  fetch(u,{method:m,headers:{
-    Accept:"text/vnd.turbo-stream.html,application/json,text/html",
-    ...(!fd&&m!=="GET"&&{"Content-Type":"application/json"}),
-    ...(t&&{"X-CSRF-Token":t})
-  },body:m==="GET"?null:(fd?p:JSON.stringify(p)),credentials:"same-origin"})
-  .then(r=>r.headers.get("content-type")?.includes("json")?r.json():r.text())
-  .then(d=>{
-    if(o.data)state[o.data]=d;
-    if(o.target){
-      const c=o.template?o.template(d):d;
-      o.action?o.target[o.action=="replace"?"replaceWith":o.action](html(c)):o.target.innerHTML=c;
-    }
-  }).catch(e=>{
-    console.error("AJAX:",e.message);
-   })
-}
+  const update = (data,target,action,template) => {
+    const element = target instanceof Node ? target : (refs.get(target) || $(target));
+    if(element){
+      const content = html(template ? template(data) : data);
+      action ? element[action=="replace"?"replaceWith":action](content) : element.innerHTML = content;
+      return content
+    } else state[target] = data
+  }
+  
+  
+const ajax = (u,m,o={},p={}) => {
+    if(o.loading) o.target = update(o.loading,o.target,o.action) || o.target;
+    const fd = p instanceof FormData, t = document.querySelector('meta[name="csrf-token"]')?.content;
+    fetch(u,{method:m,headers:{
+      Accept:"text/vnd.turbo-stream.html,application/json,text/html",
+      ...(!fd&&m!=="GET"&&{"Content-Type":"application/json"}),
+      ...(t&&{"X-CSRF-Token":t})
+    },body:m==="GET"?null:(fd?p:JSON.stringify(p)),credentials:"same-origin"})
+    .then(r=>r.headers.get("content-type")?.includes("json")?r.json():r.text())
+    .then(d=>o.loading?update(d,o.target,"replace",o.template):update(d,o.target,o.action,o.template))
+    .catch(e=>console.error("AJAX:",e.message));
+  }
 
   const get = (u,t) => ajax(u,"GET",t);
   const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(m => (u, d, t) => ajax(u, m, t, d));
   
   const handler = {
-    get: (t, p, r) => {const v = Reflect.get(t, p, r); return typeof v == "object" && v != null ? new Proxy(v, handler) : v},
-    set: (t, p, v) => {const res = Reflect.set(t, p, v); bindings.get(p)?.forEach(applyBinding); return res}
+    get: (t,p,r) => {const v = Reflect.get(t,p,r); return typeof v==="object"&&v!==null ? new Proxy(v,handler) : v},
+    set: (t,p,v) => {const res = Reflect.set(t,p,v); bindings.get(p)?.forEach(applyBinding); return res}
   };
 
   const state = new Proxy(data, handler);
   let isUpdatingDOM = false;
 
 function applyBinding(b,e={},elCtx=b.el){
-  const {el,prop,fn}=b;
-  const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
-  if(prop=="innerHTML"){isUpdatingDOM=1;el.innerHTML=Array.isArray(r)?r.join``:r;isUpdatingDOM=0}
-  else if(prop=="class"&&r&&typeof r=="object")for(const[k,v]of Object.entries(r))k.split(/\s+/).forEach(c=>el.classList.toggle(c,v));
-  else if(prop=="style"&&r&&typeof r=="object")el.style=Object.entries(r).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(";")
-  else if(prop in el){if(el.type=="radio")el.checked=el.value==r;else el[prop]=prop=="textContent"?r:parseEx(r)}
-  else el.setAttribute(prop,parseEx(r))
-}
+    const {el,prop,fn}=b;
+    const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
+    if(prop==="innerHTML"){isUpdatingDOM=1;el.innerHTML=Array.isArray(r)?r.join``:r;isUpdatingDOM=0}
+    else if(prop==="class"&&r&&typeof r==="object")for(const[k,v]of Object.entries(r))k.split(/\s+/).forEach(c=>el.classList.toggle(c,v));
+    else if(prop==="style"&&r&&typeof r==="object")el.style=Object.entries(r).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(";")
+    else if(prop in el){if(el.type==="radio")el.checked=el.value===r;else el[prop]=prop==="textContent"?r:parseEx(r)}
+    else el.setAttribute(prop,parseEx(r))
+  }
 
   const compile = (expr, withReturn = false) => {
     try {
-      return new Function("$", "$data", "$event", "$el", "$html","$get", "$post", "$put","$patch","$delete",...Object.keys(data), ...[...refs.keys()],
-        `with($data){${withReturn ? "return" : ""}(${expr.trim()})}`);
+      return new Function("$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",...Object.keys(data),...[...refs.keys()],
+        `with($data){${withReturn?"return":""}(${expr.trim()})}`);
     } catch {return () => expr}
   };
 
-const trackDependencies=fn=>{
-  const s=new Set(),p=new Proxy(state,{get:(t,k)=>{if(typeof k=="string")s.add(k);const v=t[k];return v&&typeof v=="object"?new Proxy(v,this):v}});
-  try{fn($,p,refs)}catch{};return[...s]
-}
+const trackDependencies = fn => {
+    const s=new Set(),p=new Proxy(state,{get:(t,k)=>{if(typeof k==="string")s.add(k);const v=t[k];return v&&typeof v==="object"?new Proxy(v,this):v}});
+    try{fn($,p,refs)}catch{};return[...s]
+  }
 
   const cleanup = el => {
-    [el, ...el.querySelectorAll('*')].forEach(e => {
-      listeners.get(e)?.forEach(({receiver, event, handler}) => receiver.removeEventListener(event, handler));
+    [el,...el.querySelectorAll('*')].forEach(e => {
+      listeners.get(e)?.forEach(({receiver,event,handler}) => receiver.removeEventListener(event,handler));
       listeners.delete(e);
     });
   };
@@ -151,14 +154,21 @@ const trackDependencies=fn=>{
             }         
               if (!mods.includes("outside") || !el.contains(e.target)) {
               if (isHttpMethod) {
-                const options = exFn(el.getAttribute('data-he-options') || el.getAttribute('options') || '{}');
-                let paramsAttr = el.getAttribute('data-he-params') || el.getAttribute('params') || '{}';              
+                const getAttr = name => el.getAttribute(`data-he-${name}`) || el.getAttribute(`@${name}`);
+                const [target, action] = (getAttr('target') || "").split(":");
+                const options = {
+                  ...exFn(getAttr('options') || '{}'),
+                  ...(target && { target }),
+                  ...(action && { action }),
+                  ...execFn(getAttr('template')) && { template: execFn(getAttr('template')) },
+                  ...getAttr('loading') && { loading: getAttr('loading') }
+                };
+                let paramsAttr = getAttr('params') || '{}';              
                 if (!paramsAttr.trim().startsWith("{") && paramsAttr.includes(":")) {
                   const props = paramsAttr.split(":").map(s => s.trim());
                   paramsAttr = props.reduceRight((acc, key, i) => `{ ${key}: ${i == 1 ? `'${el[acc]}'` : acc} }`);
                 }
                 const params = exFn(paramsAttr);
-                console.log("params: ",params)
                 ajax(value, eventName.toUpperCase(), options, params);
               } else {
                 exFn(value);
@@ -176,12 +186,12 @@ const trackDependencies=fn=>{
     return newBindings;
   }
   new MutationObserver(ms=>{
-  if(isUpdatingDOM)return;
-  for(const m of ms){
-    m.removedNodes.forEach(n=>n.nodeType==1&&cleanup(n));
-    m.addedNodes.forEach(n=>n.nodeType==1&&!n.hasAttribute("data-he-p")&&processElements(n).forEach(applyBinding));
-  }
-}).observe(root,{childList:1,subtree:1});
+    if(isUpdatingDOM)return;
+    for(const m of ms){
+      m.removedNodes.forEach(n=>n.nodeType===1&&cleanup(n));
+      m.addedNodes.forEach(n=>n.nodeType===1&&!n.hasAttribute("data-he-p")&&processElements(n).forEach(applyBinding));
+    }
+  }).observe(root,{childList:1,subtree:1});
   processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
 }
