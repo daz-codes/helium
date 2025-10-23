@@ -7,9 +7,10 @@ export default function helium(data = {}) {
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   const [bindings, refs, listeners] = [new Map(), new Map(), new WeakMap()];
   const $ = s => document.querySelector(s);
-  const html = s => {const t = document.createElement("template"); t.innerHTML = s.trim(); return t.content.firstChild};
+  const html = s => Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild
 
 const ajax=(u,m,o={},p={})=>{
+  console.log("ajax: ", u,m,o.target,p)
   const fd=p instanceof FormData,t=document.querySelector('meta[name="csrf-token"]')?.content;
   fetch(u,{method:m,headers:{
     Accept:"text/vnd.turbo-stream.html,application/json,text/html",
@@ -23,8 +24,13 @@ const ajax=(u,m,o={},p={})=>{
       const c=o.template?o.template(d):d;
       o.action?o.target[o.action=="replace"?"replaceWith":o.action](html(c)):o.target.innerHTML=c;
     }
-  }).catch(e=>console.error("AJAX:",e.message))
+  }).catch(e=>{
+    console.error("AJAX:",e.message);
+   })
 }
+
+  const get = (u,t) => ajax(u,"GET",t);
+  const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(m => (u, d, t) => ajax(u, m, t, d));
   
   const handler = {
     get: (t, p, r) => {const v = Reflect.get(t, p, r); return typeof v == "object" && v != null ? new Proxy(v, handler) : v},
@@ -46,13 +52,13 @@ function applyBinding(b,e={},elCtx=b.el){
 
   const compile = (expr, withReturn = false) => {
     try {
-      return new Function("$", "$data", "$event", "$el", "$html", ...Object.keys(data), ...[...refs.keys()],
+      return new Function("$", "$data", "$event", "$el", "$html","$get", "$post", "$put","$patch","$delete",...Object.keys(data), ...[...refs.keys()],
         `with($data){${withReturn ? "return" : ""}(${expr.trim()})}`);
     } catch {return () => expr}
   };
 
 const trackDependencies=fn=>{
-  const s=new Set(),p=new Proxy(data,{get:(t,k)=>{if(typeof k=="string")s.add(k);const v=t[k];return v&&typeof v=="object"?new Proxy(v,this):v}});
+  const s=new Set(),p=new Proxy(state,{get:(t,k)=>{if(typeof k=="string")s.add(k);const v=t[k];return v&&typeof v=="object"?new Proxy(v,this):v}});
   try{fn($,p,refs)}catch{};return[...s]
 }
 
@@ -89,47 +95,40 @@ const trackDependencies=fn=>{
     };
 
     heElements.forEach(el => {
-      const execFn = v => compile(v, true)($, state, {}, el, html, ...Object.values(data), ...[...refs.values()]);
+      const execFn = v => compile(v, true)($, state, {}, el, html,get,post, put,patch,del, ...Object.values(data), ...[...refs.values()]);
       const inputType = el.type?.toLowerCase();
       const isCheckbox = inputType == "checkbox", isRadio = inputType == "radio", isSelect = el.tagName == "SELECT";
 
       for (const {name, value} of el.attributes || []) {
         if (["@data","data-he"].includes(name)) Object.assign(state, execFn(value));
-        if (he(name,"ref")) refs.set("$" + value, el);
-        
+        if (he(name,"ref")) refs.set("$" + value, el);  
         if (he(name,"text","html")) {
           const fn = compile(value, true);
           const b = {el, prop: he(name,"text") ? "textContent" : "innerHTML", fn};
           trackDependencies(fn, el).forEach(dep => addBinding(dep, b));
         }
-
         if (he(name,"bind")) {
           const event = (isCheckbox || isRadio || isSelect) ? "change" : "input";
           const prop = isCheckbox ? "checked" : "value";
-          const inputHandler = e => state[value] = isCheckbox ? e.target.checked : e.target.value;
-          
+          const inputHandler = e => state[value] = isCheckbox ? e.target.checked : e.target.value;        
           el.addEventListener(event, inputHandler);
           if (!listeners.has(el)) listeners.set(el, []);
           listeners.get(el).push({receiver: el, event, handler: inputHandler});
-          addBinding(value, {el, prop, fn: compile(value, true)});
-          
+          addBinding(value, {el, prop, fn: compile(value, true)});   
           if (isCheckbox) el.checked = !!state[value];
           else if (isRadio) el.checked = el.value == state[value];
           else el.value = state[value] ?? "";
         }
-
         if (he(name,"hidden","visible")) {
           const fn = compile(`${he(name,"hidden") ? "!" : ""}!(${value})`, true);
           trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: "hidden", fn}));
         }
-
         if (name.startsWith(":")) {
           const fn = compile(value, true);
           trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: name.slice(1), fn}));
         }
-
         if (he(name,"init")) {
-          compile(value, false)($, state, undefined, el, html, ...Object.values(data), ...[...refs.values()]);
+          execFn(value);
         } else if (name.startsWith("@") || name.startsWith("data-he")) {
           const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
           const [eventName, ...mods] = fullName.split(".");
@@ -138,40 +137,35 @@ const trackDependencies=fn=>{
           const receiver = mods.includes("outside") || mods.includes("document") ? document : el; 
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
-
           const _handler = e => {
-            if (mods.includes("prevent")) e.preventDefault();
-            
+            const exFn = v => compile(v, true)($, state, e, el, html,get,post,put,patch,del, ...Object.values(data), ...[...refs.values()])
+            if (mods.includes("prevent")) e.preventDefault();        
             const keyMods = {shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey"};
-            for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;
-            
+            for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;    
             if (["keydown","keyup","keypress"].includes(event)) {
               const last = mods[mods.length - 1];
               if (last && !["prevent","once","outside","document"].includes(last)) {
                 const keyName = e.key == " " ? "Space" : e.key == "Escape" ? "Esc" : e.key;
                 if (keyName.toLowerCase() !== last.toLowerCase()) return;
               }
-            }
-            
-            if (!mods.includes("outside") || !el.contains(e.target)) {
+            }         
+              if (!mods.includes("outside") || !el.contains(e.target)) {
               if (isHttpMethod) {
-                const options = compile(el.getAttribute('data-he-options') || el.getAttribute('options') || '{}', true)($, state, e, el, html, ...Object.values(data), ...[...refs.values()]);
-                let paramsAttr = el.getAttribute('data-he-params') || el.getAttribute('params') || '{}';
-                
+                const options = exFn(el.getAttribute('data-he-options') || el.getAttribute('options') || '{}');
+                let paramsAttr = el.getAttribute('data-he-params') || el.getAttribute('params') || '{}';              
                 if (!paramsAttr.trim().startsWith("{") && paramsAttr.includes(":")) {
                   const props = paramsAttr.split(":").map(s => s.trim());
                   paramsAttr = props.reduceRight((acc, key, i) => `{ ${key}: ${i == 1 ? `'${el[acc]}'` : acc} }`);
                 }
-                const params = compile(paramsAttr, true)($, state, e, el, html, ...Object.values(data), ...[...refs.values()]);
+                const params = exFn(paramsAttr);
+                console.log("params: ",params)
                 ajax(value, eventName.toUpperCase(), options, params);
               } else {
-                compile(value, false)($, state, e, el, html, ...Object.values(data), ...[...refs.values()]);
+                exFn(value);
               }
-            }
-            
+            }            
             if (mods.includes("once")) receiver.removeEventListener(event, handler);
           };
-
           const handler = debounceDelay > 0 ? debounce(_handler, debounceDelay) : _handler;
           receiver.addEventListener(event, handler);
           if (!listeners.has(el)) listeners.set(el, []);
@@ -179,10 +173,8 @@ const trackDependencies=fn=>{
         }
       }
     });
-
     return newBindings;
   }
-
   new MutationObserver(ms=>{
   if(isUpdatingDOM)return;
   for(const m of ms){
@@ -190,7 +182,6 @@ const trackDependencies=fn=>{
     m.addedNodes.forEach(n=>n.nodeType==1&&!n.hasAttribute("data-he-p")&&processElements(n).forEach(applyBinding));
   }
 }).observe(root,{childList:1,subtree:1});
-
   processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
 }
