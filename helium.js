@@ -3,6 +3,7 @@ const getEvent = el => ({form:"submit",input:"input",textarea:"input",select:"ch
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
 
 export default function helium(data = {}) {
+  let initFn;
   const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split('.')[0]}|`);
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   const [bindings, refs, listeners] = [new Map(), new Map(), new WeakMap()];
@@ -27,9 +28,16 @@ const ajax = (u,m,o={},p={}) => {
       ...(!fd&&m!=="GET"&&{"Content-Type":"application/json"}),
       ...(t&&{"X-CSRF-Token":t})
     },body:m==="GET"?null:(fd?p:JSON.stringify(p)),credentials:"same-origin"})
-    .then(r=>r.headers.get("content-type")?.includes("json")?r.json():r.text())
-    .then(d=>o.loading?update(d,o.target,"replace",o.template):update(d,o.target,o.action,o.template))
-    .catch(e=>console.error("AJAX:",e.message));
+      .then(r => {
+        const type = r.headers.get("content-type") || "";
+        return (type.includes("turbo-stream") ? r.text().then(d => ({ t: true, d })) :
+                type.includes("json")         ? r.json() :
+                                                r.text());
+      }).then(d =>
+        d.t && "Turbo"
+          ? Turbo.renderStreamMessage(d.d)
+          : update(d, o.target, o.loading ? "replace" : o.action, o.template)
+      ).catch(e => console.error("AJAX:", e.message));
   }
 
   const get = (u,t) => ajax(u,"GET",t);
@@ -131,7 +139,7 @@ const trackDependencies = fn => {
           trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: name.slice(1), fn}));
         }
         if (he(name,"init")) {
-          execFn(value);
+          initFn = compile(value,true);
         } else if (name.startsWith("@") || name.startsWith("data-he")) {
           const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
           const [eventName, ...mods] = fullName.split(".");
@@ -194,4 +202,5 @@ const trackDependencies = fn => {
   }).observe(root,{childList:1,subtree:1});
   processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
+  if(initFn) initFn($, state, {}, {}, html,get,post, put,patch,del, ...Object.values(data), ...[...refs.values()])
 }
