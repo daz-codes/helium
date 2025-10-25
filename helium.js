@@ -6,7 +6,7 @@ export default function helium(data = {}) {
   let initFn;
   const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split('.')[0]}|`);
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
-  const [bindings, refs, listeners] = [new Map(), new Map(), new WeakMap()];
+  const [bindings, refs, listeners, processed] = [new Map(), new Map(), new WeakMap(), new WeakSet()];
   const $ = s => document.querySelector(s);
   const html = s => Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild
 
@@ -54,7 +54,12 @@ const ajax = (u,m,o={},p={}) => {
 function applyBinding(b,e={},elCtx=b.el){
     const {el,prop,fn}=b;
     const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
-    if(prop==="innerHTML"){isUpdatingDOM=1;el.innerHTML=Array.isArray(r)?r.join``:r;isUpdatingDOM=0}
+    if(prop==="innerHTML"){
+      isUpdatingDOM=1;
+      const content = el.innerHTML=Array.isArray(r)?r.join``:r
+      typeof Idiomorph === "object" ? Idiomorph.morph(el, content,{morphStyle:'innerHTML'}) : el.innerHTML = content;
+      isUpdatingDOM=0
+    }
     else if(prop==="class"&&r&&typeof r==="object")for(const[k,v]of Object.entries(r))k.split(/\s+/).forEach(c=>el.classList.toggle(c,v));
     else if(prop==="style"&&r&&typeof r==="object")el.style=Object.entries(r).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(";")
     else if(prop in el){if(el.type==="radio")el.checked=el.value===r;else el[prop]=prop==="textContent"?r:parseEx(r)}
@@ -68,10 +73,19 @@ function applyBinding(b,e={},elCtx=b.el){
     } catch {return () => expr}
   };
 
-const trackDependencies = fn => {
-    const s=new Set(),p=new Proxy(state,{get:(t,k)=>{if(typeof k==="string")s.add(k);const v=t[k];return v&&typeof v==="object"?new Proxy(v,this):v}});
-    try{fn($,p,refs)}catch{};return[...s]
-  }
+const trackDependencies = (fn, el) => {
+    const accessed = new Set();
+    const trackProxy = new Proxy(data, {
+      get(target, prop) {
+        if (typeof prop == 'string') accessed.add(prop);
+        const val = target[prop];
+        return typeof val == "object" && val != null ? new Proxy(val, this) : val;
+      }
+    });
+    
+    try { fn.call(null, $, trackProxy, refs); } catch {}
+    return [...accessed];
+  };
 
   const cleanup = el => {
     [el,...el.querySelectorAll('*')].forEach(e => {
@@ -83,8 +97,8 @@ const trackDependencies = fn => {
   function processElements(element) {
     const newBindings = [];
     if (element.nodeType == 1) {
-      if (element.hasAttribute?.("data-he-p")) return newBindings;
-      element.setAttribute("data-he-p", "");
+      if (processed.has(element)) return newBindings;
+      processed.add(element);
     }
 
     const heElements=[element,...element.querySelectorAll("*")].filter(e=>[...e.attributes].some(a=>/^(@|:|data-he)/.test(a.name)))
@@ -106,6 +120,9 @@ const trackDependencies = fn => {
     };
 
     heElements.forEach(el => {
+      if (processed.has(el)) return;
+      processed.add(el);
+      
       const execFn = v => compile(v, true)($, state, {}, el, html,get,post, put,patch,del, ...Object.values(data), ...[...refs.values()]);
       const inputType = el.type?.toLowerCase();
       const isCheckbox = inputType == "checkbox", isRadio = inputType == "radio", isSelect = el.tagName == "SELECT";
@@ -197,7 +214,7 @@ const trackDependencies = fn => {
     if(isUpdatingDOM)return;
     for(const m of ms){
       m.removedNodes.forEach(n=>n.nodeType===1&&cleanup(n));
-      m.addedNodes.forEach(n=>n.nodeType===1&&!n.hasAttribute("data-he-p")&&processElements(n).forEach(applyBinding));
+      m.addedNodes.forEach(n=>n.nodeType===1&&!processed.has(n)&&processElements(n).forEach(applyBinding));
     }
   }).observe(root,{childList:1,subtree:1});
   processElements(root);
