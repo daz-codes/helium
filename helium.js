@@ -96,10 +96,7 @@ const trackDependencies = (fn, el) => {
 
   function processElements(element) {
     const newBindings = [];
-    if (element.nodeType == 1) {
-      if (processed.has(element)) return newBindings;
-      processed.add(element);
-    }
+    if (element.nodeType == 1 && processed.has(element)) return newBindings;
 
     const heElements=[element,...element.querySelectorAll("*")].filter(e=>[...e.attributes].some(a=>/^(@|:|data-he)/.test(a.name)))
 
