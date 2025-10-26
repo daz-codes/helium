@@ -6,7 +6,7 @@ export default function helium(data = {}) {
   let initFn;
   const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split('.')[0]}|`);
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
-  const [bindings, refs, listeners, processed] = [new Map(), new Map(), new WeakMap(), new WeakSet()];
+  const [bindings, refs, listeners, processed, parentKeys] = [new Map(), new Map(), new WeakMap(), new WeakSet(), new WeakMap()];
   const $ = s => document.querySelector(s);
   const html = s => Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild
 
@@ -17,8 +17,7 @@ export default function helium(data = {}) {
       action ? element[action=="replace"?"replaceWith":action](content) : element.innerHTML = content;
       return content
     } else state[target] = data
-  }
-  
+  }  
   
 const ajax = (u,m,o={},p={}) => {
     if(o.loading) o.target = update(o.loading,o.target,o.action) || o.target;
@@ -43,22 +42,71 @@ const ajax = (u,m,o={},p={}) => {
   const get = (u,t) => ajax(u,"GET",t);
   const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(m => (u, d, t) => ajax(u, m, t, d));
   
-  const handler = {
-    get: (t,p,r) => {const v = Reflect.get(t,p,r); return typeof v==="object"&&v!==null ? new Proxy(v,handler) : v},
-    set: (t,p,v) => {const res = Reflect.set(t,p,v); bindings.get(p)?.forEach(applyBinding); return res}
-  };
+const handler = {
+    get: (t,p,r) => {
+      const v = Reflect.get(t,p,r); 
+      if (typeof v==="object" && v!==null) {
+        const proxy = new Proxy(v, handler);
+        parentKeys.set(v, p);
+        return proxy;
+      }
+      return v;
+    },
+    set: (t,p,v) => {
+      const res = Reflect.set(t,p,v);    
+      if (Array.isArray(t) && !isNaN(p)) {
+        const parentKey = parentKeys.get(t);
+        if (parentKey) bindings.get(parentKey)?.forEach(applyBinding);
+      }   
+      bindings.get(p)?.forEach(applyBinding); 
+      return res
+    }
+};
 
   const state = new Proxy(data, handler);
-  let isUpdatingDOM = false;
 
 function applyBinding(b,e={},elCtx=b.el){
     const {el,prop,fn}=b;
     const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
-    if(prop==="innerHTML"){
-      isUpdatingDOM=1;
+    if(prop==="innerHTML" && Array.isArray(r) && el.children.length > 0){
+  const temp = html(`<${el.tagName.toLowerCase()}>${r.join``}</${el.tagName.toLowerCase()}>`);
+  const newChildren = [...temp.children];
+  
+  const newItems = newChildren.map((child, idx) => ({
+    key: child.getAttribute("key") || child.dataset.key,
+    element: child,
+    index: idx
+  }));
+  
+  const existingItems = [...el.children].map((child, idx) => ({
+    key: child.getAttribute("key") || child.dataset.key,
+    element: child,
+    index: idx
+  }));
+  
+  for (let i = 0; i < Math.max(newItems.length, existingItems.length); i++) {
+    const existing = existingItems[i];
+    const newItem = newItems[i];
+    
+    if (!newItem && existing) {
+      cleanup(existing.element);
+      existing.element.remove();
+    } else if (newItem && !existing) {
+      el.appendChild(newItem.element);
+    } else if (newItem && existing) {
+      if (existing.element.outerHTML !== newItem.element.outerHTML) {
+        if(typeof Idiomorph === "object") {
+          Idiomorph.morph(existing.element, newItem.element.outerHTML);
+        } else {
+          cleanup(existing.element);
+          existing.element.replaceWith(newItem.element);
+        }
+      }
+    }
+  }    
+    } else if(prop==="innerHTML"){
       const content = Array.isArray(r)?r.join``:r
       typeof Idiomorph === "object" ? Idiomorph.morph(el, content,{morphStyle:'innerHTML'}) : el.innerHTML = content;
-      isUpdatingDOM=0
     }
     else if(prop==="class"&&r&&typeof r==="object")for(const[k,v]of Object.entries(r))k.split(/\s+/).forEach(c=>el.classList.toggle(c,v));
     else if(prop==="style"&&r&&typeof r==="object")el.style=Object.entries(r).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(";")
@@ -95,12 +143,14 @@ const trackDependencies = (fn, el) => {
   };
 
   function processElements(element) {
+    let count = 0
     const newBindings = [];
     if (element.nodeType == 1 && processed.has(element)) return newBindings;
 
     const heElements=[element,...element.querySelectorAll("*")].filter(e=>[...e.attributes].some(a=>/^(@|:|data-he)/.test(a.name)))
 
     heElements.forEach(el => {
+      count++
       for (const {name, value} of el.attributes || []) {
         if (he(name,"text","html","bind")) {
           try {
@@ -208,7 +258,6 @@ const trackDependencies = (fn, el) => {
     return newBindings;
   }
   new MutationObserver(ms=>{
-    if(isUpdatingDOM)return;
     for(const m of ms){
       m.removedNodes.forEach(n=>n.nodeType===1&&cleanup(n));
       m.addedNodes.forEach(n=>n.nodeType===1&&!processed.has(n)&&processElements(n).forEach(applyBinding));
