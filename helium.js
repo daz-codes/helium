@@ -56,7 +56,7 @@ function applyBinding(b,e={},elCtx=b.el){
     const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
     if(prop==="innerHTML"){
       isUpdatingDOM=1;
-      const content = el.innerHTML=Array.isArray(r)?r.join``:r
+      const content = Array.isArray(r)?r.join``:r
       typeof Idiomorph === "object" ? Idiomorph.morph(el, content,{morphStyle:'innerHTML'}) : el.innerHTML = content;
       isUpdatingDOM=0
     }
