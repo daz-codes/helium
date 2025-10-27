@@ -6,7 +6,7 @@ export default function helium(data = {}) {
   let initFn;
   const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split('.')[0]}|`);
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
-  const [bindings, refs, listeners, processed, parentKeys] = [new Map(), new Map(), new WeakMap(), new WeakSet(), new WeakMap()];
+  const [bindings, refs, listeners, processed, parentKeys, fnCache, proxyCache] = [new Map(), new Map(), new WeakMap(), new WeakSet(), new WeakMap(), new Map(), new WeakMap()];
   const $ = s => document.querySelector(s);
   const html = s => Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild
 
@@ -43,15 +43,17 @@ const ajax = (u,m,o={},p={}) => {
   const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(m => (u, d, t) => ajax(u, m, t, d));
   
 const handler = {
-    get: (t,p,r) => {
-      const v = Reflect.get(t,p,r); 
-      if (typeof v==="object" && v!==null) {
-        const proxy = new Proxy(v, handler);
-        parentKeys.set(v, p);
-        return proxy;
-      }
-      return v;
-    },
+    get(t,p,r) {
+    const v = Reflect.get(t,p,r);
+    if (v && typeof v === "object") {
+      if (proxyCache.has(v)) return proxyCache.get(v);
+      const proxy = new Proxy(v, handler);
+      proxyCache.set(v, proxy);
+      parentKeys.set(v, p);
+      return proxy;
+    }
+    return v;
+  },
     set: (t,p,v) => {
       const res = Reflect.set(t,p,v);    
       if (Array.isArray(t) && !isNaN(p)) {
@@ -64,11 +66,40 @@ const handler = {
 };
 
   const state = new Proxy(data, handler);
-
+  
 function applyBinding(b,e={},elCtx=b.el){
-    const {el,prop,fn}=b;
-    const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
-    if(prop==="innerHTML" && Array.isArray(r) && el.children.length > 0){
+  const {el,prop,fn}=b;
+  const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
+
+  if (prop==="innerHTML" && Array.isArray(r) && el.children.length > 0)
+    return updateList(el, r);
+  
+  if (prop==="innerHTML") {
+    const content = Array.isArray(r)?r.join``:r;
+    return typeof Idiomorph === "object"
+      ? Idiomorph.morph(el, content,{morphStyle:'innerHTML'})
+      : el.innerHTML = content;
+  }
+
+  if (prop==="class" && r && typeof r==="object")
+    return Object.entries(r).forEach(([k,v]) =>
+      k.split(/\s+/).forEach(c => el.classList.toggle(c,v)));
+
+  if (prop==="style" && r && typeof r==="object")
+    return el.style = Object.entries(r).filter(([,v])=>v)
+      .map(([k,v])=>`${k}:${v}`).join(";");
+
+  if (prop in el) {
+    if(el.type==="radio") el.checked = el.value===r;
+    else el[prop] = prop==="textContent"?r:parseEx(r);
+    return;
+  }
+
+  el.setAttribute(prop, parseEx(r));
+}
+
+
+function updateList(el,r){
   const temp = html(`<${el.tagName.toLowerCase()}>${r.join``}</${el.tagName.toLowerCase()}>`);
   const newChildren = [...temp.children];
   
@@ -104,22 +135,23 @@ function applyBinding(b,e={},elCtx=b.el){
       }
     }
   }    
-    } else if(prop==="innerHTML"){
-      const content = Array.isArray(r)?r.join``:r
-      typeof Idiomorph === "object" ? Idiomorph.morph(el, content,{morphStyle:'innerHTML'}) : el.innerHTML = content;
-    }
-    else if(prop==="class"&&r&&typeof r==="object")for(const[k,v]of Object.entries(r))k.split(/\s+/).forEach(c=>el.classList.toggle(c,v));
-    else if(prop==="style"&&r&&typeof r==="object")el.style=Object.entries(r).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(";")
-    else if(prop in el){if(el.type==="radio")el.checked=el.value===r;else el[prop]=prop==="textContent"?r:parseEx(r)}
-    else el.setAttribute(prop,parseEx(r))
-  }
+    } 
 
-  const compile = (expr, withReturn = false) => {
-    try {
-      return new Function("$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",...Object.keys(data),...[...refs.keys()],
-        `with($data){${withReturn?"return":""}(${expr.trim()})}`);
-    } catch {return () => expr}
-  };
+const compile = (expr, withReturn = false) => {
+  const key = `${withReturn}:${expr}`;
+  if (fnCache.has(key)) return fnCache.get(key);
+  try {
+    const fn = new Function(
+      "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
+      ...Object.keys(data), ...[...refs.keys()],
+      `with($data){${withReturn?"return":""}(${expr.trim()})}`
+    );
+    fnCache.set(key, fn);
+    return fn;
+  } catch {
+    return () => expr;
+  }
+};
 
 const trackDependencies = (fn, el) => {
     const accessed = new Set();
@@ -142,24 +174,11 @@ const trackDependencies = (fn, el) => {
     });
   };
 
-  function processElements(element) {
-    let count = 0
+function processElements(element) {
     const newBindings = [];
-    if (element.nodeType == 1 && processed.has(element)) return newBindings;
 
-    const heElements=[element,...element.querySelectorAll("*")].filter(e=>[...e.attributes].some(a=>/^(@|:|data-he)/.test(a.name)))
-
-    heElements.forEach(el => {
-      count++
-      for (const {name, value} of el.attributes || []) {
-        if (he(name,"text","html","bind")) {
-          try {
-            new Function(`let ${value}=1`);
-            state[value] ||= he(name,"bind") ? el.type == "checkbox" ? el.checked : el.value : el.textContent;
-          } catch {}
-        }
-      }
-    });
+    const heElements = [element, ...element.querySelectorAll("*")]
+      .filter(e => !processed.has(e) && [...e.attributes].some(a => /^(@|:|data-he)/.test(a.name)));
 
     const addBinding = (val, b) => {
       bindings.set(val, [...(bindings.get(val) || []), b]);
@@ -167,75 +186,99 @@ const trackDependencies = (fn, el) => {
     };
 
     heElements.forEach(el => {
-      if (processed.has(el)) return;
       processed.add(el);
       
-      const execFn = v => compile(v, true)($, state, {}, el, html,get,post, put,patch,del, ...Object.values(data), ...[...refs.values()]);
+      const attrs = el.attributes;
+      const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
       const inputType = el.type?.toLowerCase();
       const isCheckbox = inputType == "checkbox", isRadio = inputType == "radio", isSelect = el.tagName == "SELECT";
 
-      for (const {name, value} of el.attributes || []) {
-        if (["@data","data-he"].includes(name)) Object.assign(state, execFn(value));
-        if (he(name,"ref")) refs.set("$" + value, el);  
-        if (he(name,"text","html")) {
+      // Single loop through attributes with early skipping
+      for (let i = 0; i < attrs.length; i++) {
+        const {name, value} = attrs[i];
+        
+        // Skip non-helium attributes early
+        if (!name.startsWith('@') && !name.startsWith(':') && !name.startsWith('data-he')) continue;
+
+        // Initialize state first if needed
+        if (he(name, "text", "html", "bind")) {
+          try {
+            new Function(`let ${value}=1`);
+            state[value] ??= he(name, "bind") ? (el.type == "checkbox" ? el.checked : el.value) : el.textContent;
+          } catch {}
+        }
+
+        // Process the attribute
+        if (["@data", "data-he"].includes(name)) {
+          Object.assign(state, execFn(value));
+        }
+        else if (he(name, "ref")) {
+          refs.set("$" + value, el);
+        }
+        else if (he(name, "text", "html")) {
           const fn = compile(value, true);
-          const b = {el, prop: he(name,"text") ? "textContent" : "innerHTML", fn};
+          const b = {el, prop: he(name, "text") ? "textContent" : "innerHTML", fn};
           trackDependencies(fn, el).forEach(dep => addBinding(dep, b));
         }
-        if (he(name,"bind")) {
+        else if (he(name, "bind")) {
           const event = (isCheckbox || isRadio || isSelect) ? "change" : "input";
           const prop = isCheckbox ? "checked" : "value";
-          const inputHandler = e => state[value] = isCheckbox ? e.target.checked : e.target.value;        
+          const inputHandler = e => state[value] = isCheckbox ? e.target.checked : e.target.value;
           el.addEventListener(event, inputHandler);
           if (!listeners.has(el)) listeners.set(el, []);
           listeners.get(el).push({receiver: el, event, handler: inputHandler});
-          addBinding(value, {el, prop, fn: compile(value, true)});   
+          addBinding(value, {el, prop, fn: compile(value, true)});
           if (isCheckbox) el.checked = !!state[value];
           else if (isRadio) el.checked = el.value == state[value];
           else el.value = state[value] ?? "";
         }
-        if (he(name,"hidden","visible")) {
-          const fn = compile(`${he(name,"hidden") ? "!" : ""}!(${value})`, true);
+        else if (he(name, "hidden", "visible")) {
+          const fn = compile(`${he(name, "hidden") ? "!" : ""}!(${value})`, true);
           trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: "hidden", fn}));
         }
-        if (name.startsWith(":")) {
+        else if (he(name, "class")) {
+          const fn = compile(value, true);
+          trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: "class", fn}));
+        }
+        else if (name.startsWith(":")) {
           const fn = compile(value, true);
           trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: name.slice(1), fn}));
         }
-        if (he(name,"init")) {
-          initFn = compile(value,true);
-        } else if (name.startsWith("@") || name.startsWith("data-he")) {
+        else if (he(name, "init")) {
+          initFn = compile(value, true);
+        }
+        else if (name.startsWith("@") || name.startsWith("data-he")) {
           const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
           const [eventName, ...mods] = fullName.split(".");
-          const isHttpMethod = ["get","post","put","patch","delete"].includes(eventName);
+          const isHttpMethod = ["get", "post", "put", "patch", "delete"].includes(eventName);
           const event = isHttpMethod ? getEvent(el) : eventName;
-          const receiver = mods.includes("outside") || mods.includes("document") ? document : el; 
+          const receiver = mods.includes("outside") || mods.includes("document") ? document : el;
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
           const _handler = e => {
-            const exFn = v => compile(v, true)($, state, e, el, html,get,post,put,patch,del, ...Object.values(data), ...[...refs.values()])
-            if (mods.includes("prevent")) e.preventDefault();        
+            const exFn = v => compile(v, true)($, state, e, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()])
+            if (mods.includes("prevent")) e.preventDefault();
             const keyMods = {shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey"};
-            for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;    
-            if (["keydown","keyup","keypress"].includes(event)) {
+            for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;
+            if (["keydown", "keyup", "keypress"].includes(event)) {
               const last = mods[mods.length - 1];
-              if (last && !["prevent","once","outside","document"].includes(last)) {
+              if (last && !["prevent", "once", "outside", "document"].includes(last)) {
                 const keyName = e.key == " " ? "Space" : e.key == "Escape" ? "Esc" : e.key;
                 if (keyName.toLowerCase() !== last.toLowerCase()) return;
               }
-            }         
-              if (!mods.includes("outside") || !el.contains(e.target)) {
+            }
+            if (!mods.includes("outside") || !el.contains(e.target)) {
               if (isHttpMethod) {
                 const getAttr = name => el.getAttribute(`data-he-${name}`) || el.getAttribute(`@${name}`);
                 const [target, action] = (getAttr('target') || "").split(":");
                 const options = {
                   ...exFn(getAttr('options') || '{}'),
-                  ...(target && { target }),
-                  ...(action && { action }),
-                  ...execFn(getAttr('template')) && { template: execFn(getAttr('template')) },
-                  ...getAttr('loading') && { loading: getAttr('loading') }
+                  ...(target && {target}),
+                  ...(action && {action}),
+                  ...execFn(getAttr('template')) && {template: execFn(getAttr('template'))},
+                  ...getAttr('loading') && {loading: getAttr('loading')}
                 };
-                let paramsAttr = getAttr('params') || '{}';              
+                let paramsAttr = getAttr('params') || '{}';
                 if (!paramsAttr.trim().startsWith("{") && paramsAttr.includes(":")) {
                   const props = paramsAttr.split(":").map(s => s.trim());
                   paramsAttr = props.reduceRight((acc, key, i) => `{ ${key}: ${i == 1 ? `'${el[acc]}'` : acc} }`);
@@ -245,7 +288,7 @@ const trackDependencies = (fn, el) => {
               } else {
                 exFn(value);
               }
-            }            
+            }
             if (mods.includes("once")) receiver.removeEventListener(event, handler);
           };
           const handler = debounceDelay > 0 ? debounce(_handler, debounceDelay) : _handler;
