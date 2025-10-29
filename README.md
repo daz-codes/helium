@@ -53,7 +53,7 @@ This will update the textContent of the element with the value of the `count` va
 <b @text="count">0</b>
 ```
 
-You can also use expresions. This will update the textContent of the element with the value of the `name` variable but in uppercase:
+You can also use expressions. This will update the textContent of the element with the value of the `name` variable but in uppercase:
 
 ```html
 <span @text="name.toUpperCase()">0</span>
