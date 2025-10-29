@@ -85,7 +85,7 @@ Alias: `data-he-hidden` & `data-he-visible`
 
 ## `@data`
 
-Initializes variables that can be used in JacaScript expressions.
+Initializes variables that can be used in JavaScript expressions.
 
 ```html
 <div @data="{ count: 0, open: false }"></div>
@@ -123,7 +123,7 @@ Alias: `data-he-init`
 
 ## Event Listeners & Handlers
 
-Event listeners and handlers can be created by prepending `@` before the event name, for example `@click="count++"` will run the cound `count++` when the element is clicked on.
+Event listeners and handlers can be created by prepending `@` before the event name, for example `@click="count++"` will run the statement `count++` when the element is clicked on.
 
 ```html
 <button @click="count++">Increment</button>
@@ -188,7 +188,7 @@ For example, the following will set the `count` variable to an initial value of 
 helium({ count: 29, name: "Helium"})
 ```
 
-The following example shows how a function can be added into Helium and then used by even listeners:
+The following example shows how a function can be added into Helium and then used by event listeners:
 
 ```javascript
 helium({ 
