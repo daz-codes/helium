@@ -22,11 +22,18 @@ export default function helium(data = {}) {
 const ajax = (u,m,o={},p={}) => {
     if(o.loading) o.target = update(o.loading,o.target,o.action) || o.target;
     const fd = p instanceof FormData, t = document.querySelector('meta[name="csrf-token"]')?.content;
-    fetch(u,{method:m,headers:{
-      Accept:"text/vnd.turbo-stream.html,application/json,text/html",
-      ...(!fd&&m!=="GET"&&{"Content-Type":"application/json"}),
-      ...(t&&{"X-CSRF-Token":t})
-    },body:m==="GET"?null:(fd?p:JSON.stringify(p)),credentials:"same-origin"})
+    const url = new URL(u, window.location.href);
+    const sameOrigin = url.origin === window.location.origin;
+fetch(u, {
+  method: m,
+  headers: {
+    Accept:"text/vnd.turbo-stream.html,application/json,text/html",
+    ...(!fd && m !== "GET" && {"Content-Type":"application/json"}),
+    ...(sameOrigin && t ? {"X-CSRF-Token": t} : {})
+  },
+  body: m === "GET" ? null : (fd ? p : JSON.stringify(p)),
+  credentials: sameOrigin ? "same-origin" : "omit"
+})
       .then(r => {
         const type = r.headers.get("content-type") || "";
         return (type.includes("turbo-stream") ? r.text().then(d => ({ t: true, d })) :
