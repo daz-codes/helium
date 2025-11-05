@@ -2,7 +2,7 @@ const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
 const getEvent = el => ({form:"submit",input:"input",textarea:"input",select:"change"}[el.tagName.toLowerCase()]||"click")
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
 
-(function (data = {}) {
+(function () {
   let initFn;
   const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split(/[.:]/)[0]}|`);
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
@@ -72,7 +72,7 @@ const handler = {
     }
 };
 
-  const state = new Proxy(data, handler);
+  const state = new Proxy({}, handler);
   
 function applyBinding(b,e={},elCtx=b.el){
   const {el,prop,fn,calc}=b;
@@ -168,7 +168,7 @@ const compile = (expr, withReturn = false) => {
 
 const trackDependencies = (fn, el, excludeChanged = false) => {
   const accessed = excludeChanged ? new Map() : new Set();
-  const trackProxy = new Proxy(data, {
+  const trackProxy = new Proxy(state, {
     get(target, prop) {
       if (typeof prop == 'string') {
         if (excludeChanged && !accessed.has(prop)) {
