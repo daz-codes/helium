@@ -2,9 +2,9 @@ const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
 const getEvent = el => ({form:"submit",input:"input",textarea:"input",select:"change"}[el.tagName.toLowerCase()]||"click")
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
 
-export default function helium(data = {}) {
+(function (data = {}) {
   let initFn;
-  const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split('.')[0]}|`);
+  const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split(/[.:]/)[0]}|`);
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   const [bindings, refs, listeners, processed, parentKeys, fnCache, proxyCache] = [new Map(), new Map(), new WeakMap(), new WeakSet(), new WeakMap(), new Map(), new WeakMap()];
   const $ = s => document.querySelector(s);
@@ -75,9 +75,9 @@ const handler = {
   const state = new Proxy(data, handler);
   
 function applyBinding(b,e={},elCtx=b.el){
-  const {el,prop,fn}=b;
-  const r=fn($,state,e,elCtx,html,...Object.values(data),...[...refs.values()]);
-
+  const {el,prop,fn,calc}=b;
+  const r=fn($,state,e,elCtx,html,...Object.values(state),...[...refs.values()]);
+  if (calc) state[calc] = r
   if (prop==="innerHTML" && Array.isArray(r) && el.children.length > 0)
     return updateList(el, r);
   
@@ -145,13 +145,19 @@ function updateList(el,r){
     } 
 
 const compile = (expr, withReturn = false) => {
-  const key = `${withReturn}:${expr}`;
+  // Auto-detect if this should be a statement block
+  const hasStatements = /[;\r\n]/.test(expr);
+  const useReturn = withReturn && !hasStatements;
+  
+  const key = `${useReturn}:${expr}`;
   if (fnCache.has(key)) return fnCache.get(key);
   try {
     const fn = new Function(
       "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
-      ...Object.keys(data), ...[...refs.keys()],
-      `with($data){${withReturn?"return":""}(${expr.trim()})}`
+      ...Object.keys(state), ...[...refs.keys()],
+      useReturn 
+        ? `with($data){return(${expr.trim()})}` 
+        : `with($data){${expr.trim()}}`
     );
     fnCache.set(key, fn);
     return fn;
@@ -160,19 +166,29 @@ const compile = (expr, withReturn = false) => {
   }
 };
 
-const trackDependencies = (fn, el) => {
-    const accessed = new Set();
-    const trackProxy = new Proxy(data, {
-      get(target, prop) {
-        if (typeof prop == 'string') accessed.add(prop);
-        const val = target[prop];
-        return typeof val == "object" && val != null ? new Proxy(val, this) : val;
+const trackDependencies = (fn, el, excludeChanged = false) => {
+  const accessed = excludeChanged ? new Map() : new Set();
+  const trackProxy = new Proxy(data, {
+    get(target, prop) {
+      if (typeof prop == 'string') {
+        if (excludeChanged && !accessed.has(prop)) {
+          accessed.set(prop, target[prop]); // Store initial value
+        } else if (!excludeChanged) {
+          accessed.add(prop);
+        }
       }
-    });
-    
-    try { fn.call(null, $, trackProxy, refs); } catch {}
-    return [...accessed];
-  };
+      const val = target[prop];
+      return typeof val == "object" && val != null ? new Proxy(val, this) : val;
+    }
+  });
+  
+  try { fn.call(null, $, trackProxy, refs); } catch {}
+  
+  if (excludeChanged) {
+    return [...accessed.keys()].filter(prop => data[prop] === accessed.get(prop));
+  }
+  return [...accessed];
+};
 
   const cleanup = el => {
     [el,...el.querySelectorAll('*')].forEach(e => {
@@ -189,14 +205,14 @@ function processElements(element) {
 
     const addBinding = (val, b) => {
       bindings.set(val, [...(bindings.get(val) || []), b]);
-      newBindings.push(b);
+      b.calc ? newBindings.unshift(b) : newBindings.push(b);
     };
 
     heElements.forEach(el => {
       processed.add(el);
       
       const attrs = el.attributes;
-      const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()]);
+      const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(state), ...[...refs.values()]);
       const inputType = el.type?.toLowerCase();
       const isCheckbox = inputType == "checkbox", isRadio = inputType == "radio", isSelect = el.tagName == "SELECT";
 
@@ -243,13 +259,24 @@ function processElements(element) {
           const fn = compile(`${he(name, "hidden") ? "!" : ""}!(${value})`, true);
           trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: "hidden", fn}));
         }
+        else if (he(name, "calculate")) {
+          const calc = name.split(":")[1];
+          const fn = compile(value, true);
+          trackDependencies(fn, el, true).forEach(key => addBinding(key, {el, calc, prop: null, fn}));
+        }
+        else if (he(name, "effect")) {
+          const keys = name.split(":").slice(1);
+          const fn = compile(value, true);
+const tracked = keys.includes("*") ? Object.keys(state) : trackDependencies(fn, el, true).concat(keys);
+          tracked.forEach(key => addBinding(key, {el, prop: null, fn}));
+        }
         else if (he(name, "class")) {
           const fn = compile(value, true);
           trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: "class", fn}));
         }
-        else if (name.startsWith(":")) {
+        else if (name.startsWith(":") || name.startsWith("data-he-attr:")) {
           const fn = compile(value, true);
-          trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: name.slice(1), fn}));
+          trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: name.slice(name.startsWith(":") ? 1 : 13), fn}));
         }
         else if (he(name, "init")) {
           initFn = compile(value, true);
@@ -263,7 +290,7 @@ function processElements(element) {
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
           const _handler = e => {
-            const exFn = v => compile(v, true)($, state, e, el, html, get, post, put, patch, del, ...Object.values(data), ...[...refs.values()])
+    const exFn = v => compile(v)($, state, e, el, html, get, post, put, patch, del, ...Object.values(state), ...[...refs.values()])
             if (mods.includes("prevent")) e.preventDefault();
             const keyMods = {shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey"};
             for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;
@@ -315,5 +342,5 @@ function processElements(element) {
   }).observe(root,{childList:1,subtree:1});
   processElements(root);
   for (const [key, items] of bindings.entries()) items.forEach(applyBinding);
-  if(initFn) initFn($, state, {}, {}, html,get,post, put,patch,del, ...Object.values(data), ...[...refs.values()])
-}
+  if(initFn) initFn($, state, {}, {}, html,get,post, put,patch,del, ...Object.values(state), ...[...refs.values()])
+})()
