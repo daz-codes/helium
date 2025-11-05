@@ -147,8 +147,7 @@ function updateList(el,r){
 const compile = (expr, withReturn = false) => {
   // Auto-detect if this should be a statement block
   const hasStatements = /[;\r\n]/.test(expr);
-  const useReturn = withReturn && !hasStatements;
-  
+  const useReturn = withReturn && (!hasStatements || expr.trim().startsWith('{') && expr.trim().endsWith('}'));
   const key = `${useReturn}:${expr}`;
   if (fnCache.has(key)) return fnCache.get(key);
   try {
@@ -233,7 +232,7 @@ function processElements(element) {
 
         // Process the attribute
         if (["@data", "data-he"].includes(name)) {
-          Object.assign(state, execFn(value));
+          Object.assign(state, parseEx(value));
         }
         else if (he(name, "ref")) {
           refs.set("$" + value, el);
@@ -290,7 +289,7 @@ const tracked = keys.includes("*") ? Object.keys(state) : trackDependencies(fn, 
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
           const _handler = e => {
-    const exFn = v => compile(v)($, state, e, el, html, get, post, put, patch, del, ...Object.values(state), ...[...refs.values()])
+    const exFn = v => compile(v,true)($, state, e, el, html, get, post, put, patch, del, ...Object.values(state), ...[...refs.values()])
             if (mods.includes("prevent")) e.preventDefault();
             const keyMods = {shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey"};
             for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;
@@ -310,7 +309,7 @@ const tracked = keys.includes("*") ? Object.keys(state) : trackDependencies(fn, 
                   ...(target && {target}),
                   ...(action && {action}),
                   ...execFn(getAttr('template')) && {template: execFn(getAttr('template'))},
-                  ...getAttr('loading') && {loading: getAttr('loading')}
+                  ...execFn(getAttr('loading')) && {loading: execFn(getAttr('loading'))}
                 };
                 let paramsAttr = getAttr('params') || '{}';
                 if (!paramsAttr.trim().startsWith("{") && paramsAttr.includes(":")) {
