@@ -4,6 +4,7 @@ const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...
 
 (function () {
   let initFn;
+  const ALL = Symbol("all");
   const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split(/[.:]/)[0]}|`);
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   const [bindings, refs, listeners, processed, parentKeys, fnCache, proxyCache] = [new Map(), new Map(), new WeakMap(), new WeakSet(), new WeakMap(), new Map(), new WeakMap()];
@@ -67,7 +68,7 @@ const handler = {
         const parentKey = parentKeys.get(t);
         if (parentKey) bindings.get(parentKey)?.forEach(applyBinding);
       }   
-      bindings.get(p)?.forEach(applyBinding); 
+      bindings.get(p)?.concat(bindings.get(ALL))?.forEach(applyBinding); 
       return res
     }
 };
@@ -184,7 +185,7 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
   try { fn.call(null, $, trackProxy, refs); } catch {}
   
   if (excludeChanged) {
-    return [...accessed.keys()].filter(prop => data[prop] === accessed.get(prop));
+    return [...accessed.keys()].filter(prop => state[prop] === accessed.get(prop));
   }
   return [...accessed];
 };
@@ -266,7 +267,7 @@ function processElements(element) {
         else if (he(name, "effect")) {
           const keys = name.split(":").slice(1);
           const fn = compile(value, true);
-const tracked = keys.includes("*") ? Object.keys(state) : trackDependencies(fn, el, true).concat(keys);
+const tracked = keys.includes("*") ? [ALL] : trackDependencies(fn, el, true).concat(keys);
           tracked.forEach(key => addBinding(key, {el, prop: null, fn}));
         }
         else if (he(name, "class")) {
