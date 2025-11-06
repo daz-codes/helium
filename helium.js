@@ -203,7 +203,7 @@ function processElements(element) {
       .filter(e => !processed.has(e) && [...e.attributes].some(a => /^(@|:|data-he)/.test(a.name)));
 
     const addBinding = (val, b) => {
-      bindings.set(val, [...(bindings.get(val) || []), b]);
+      bindings.set(val, b.calc ? [b,...(bindings.get(val) || [])] : [...(bindings.get(val) || []), b]);
       b.calc ? newBindings.unshift(b) : newBindings.push(b);
     };
 
