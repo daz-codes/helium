@@ -254,10 +254,6 @@ function processElements(element) {
             tracked.forEach(key => addBinding(key, {el, prop: null, fn}));
           })
         }
-        else if (he(name, "class")) {
-          const fn = compile(value, true);
-          deferredBindings.push(() => trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: "class", fn})));
-        }
         else if (he(name, "init")) {
           initFn = compile(value, true);
         }
