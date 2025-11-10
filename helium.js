@@ -8,7 +8,11 @@ let HELIUM = null;
 window.helium = function() {
   let initFn;
   const ALL = Symbol("all");
-  const he = (n,...a) => a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${n.split(/[.:]/)[0]}|`);
+  const he = (n,...a) => {
+  const prefix = n.split(/[.:]/)[0];
+  if (prefix === ":" || prefix === "") return false;
+  return a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${prefix}|`);
+};
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   
   // Initialize or reuse HELIUM object
@@ -104,7 +108,6 @@ function applyBinding(b,e={},elCtx=b.el){
       ? Idiomorph.morph(el, content,{morphStyle:'innerHTML'})
       : el.innerHTML = content;
   }
-
   if (prop==="class" && r && typeof r==="object")
     return Object.entries(r).forEach(([k,v]) =>
       k.split(/\s+/).forEach(c => el.classList.toggle(c,v)));
