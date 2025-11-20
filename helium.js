@@ -117,32 +117,39 @@ function applyBinding(b,e={},elCtx=b.el){
       .map(([k,v])=>`${k}:${v}`).join(";");
 
   if (prop in el) {
-    if(el.type==="radio") el.checked = el.value===r;
+    if (el.type === "radio" && prop != "checked") el.checked = el.value===r;
     else el[prop] = prop==="textContent"?r:parseEx(r);
     return;
   }
 
   el.setAttribute(prop, parseEx(r));
 }
-
+  
 const compile = (expr, withReturn = false) => {
-  // Auto-detect if this should be a statement block
-  const hasStatements = /[;\r\n]/.test(expr);
-  const useReturn = withReturn && (!hasStatements || expr.trim().startsWith('{') && expr.trim().endsWith('}'));
-  const key = `${useReturn}:${expr}`;
+  const key = `${withReturn}:${expr}`;
   if (HELIUM.fnCache.has(key)) return HELIUM.fnCache.get(key);
   try {
     const fn = new Function(
       "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
       ...Object.keys(state), ...[...HELIUM.refs.keys()],
-      useReturn 
+      withReturn 
         ? `with($data){return(${expr.trim()})}` 
         : `with($data){${expr.trim()}}`
     );
     HELIUM.fnCache.set(key, fn);
     return fn;
   } catch {
-    return () => expr;
+    try {
+      const fn = new Function(
+        "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
+        ...Object.keys(state), ...[...HELIUM.refs.keys()],
+        `with($data){${expr.trim()}}`
+      );
+      HELIUM.fnCache.set(key, fn);
+      return fn;
+    } catch {
+      return () => expr;
+    }
   }
 };
 
@@ -218,15 +225,14 @@ function processElements(element) {
         }
         else if (name.startsWith(":") || name.startsWith("data-he-attr:")) {
           const fn = compile(value, true);
-          deferredBindings.push(() => trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: name.slice(name.startsWith(":") ? 1 : 13), fn})));
+          deferredBindings.push({el, prop: name.slice(name.startsWith(":") ? 1 : 13), fn});
         }
         else if (he(name, "ref")) {
           HELIUM.refs.set("$" + value, el);
         }
         else if (he(name, "text", "html")) {
           const fn = compile(value, true);
-          const b = {el, prop: he(name, "text") ? "textContent" : "innerHTML", fn};
-          deferredBindings.push(() => trackDependencies(fn, el).forEach(dep => addBinding(dep, b)));
+          deferredBindings.push({el, prop: he(name, "text") ? "textContent" : "innerHTML", fn});
         }
         else if (he(name, "bind")) {
           const event = (isCheckbox || isRadio || isSelect) ? "change" : "input";
@@ -242,20 +248,17 @@ function processElements(element) {
         }
         else if (he(name, "hidden", "visible")) {
           const fn = compile(`${he(name, "hidden") ? "!" : ""}!(${value})`, true);
-          deferredBindings.push(() => trackDependencies(fn, el).forEach(dep => addBinding(dep, {el, prop: "hidden", fn})));
+          deferredBindings.push({el, prop: "hidden", fn});
         }
         else if (he(name, "calculate")) {
           const calc = name.split(":")[1];
           const fn = compile(value, true);
-          deferredBindings.push(() => trackDependencies(fn, el, true).forEach(key => addBinding(key, {el, calc, prop: null, fn})));
+          deferredBindings.push({el, calc, prop: null, fn});
         }
         else if (he(name, "effect")) {
           const keys = name.split(":").slice(1);
           const fn = compile(value, true);
-          deferredBindings.push(() => {
-            const tracked = keys.includes("*") ? [ALL] : trackDependencies(fn, el, true).concat(keys);
-            tracked.forEach(key => addBinding(key, {el, prop: null, fn}));
-          })
+          deferredBindings.push({el, prop: null, fn, keys});
         }
         else if (he(name, "init")) {
           initFn = compile(value, true);
@@ -291,11 +294,11 @@ function processElements(element) {
                   ...(getAttr("template") && { template: execFn(getAttr("template")),}),
                   ...(getAttr("loading") && { loading: execFn(getAttr("loading"))}),
                 };
-                let paramsAttr = getAttr('params') || '{}';
-                if (!paramsAttr.trim().startsWith("{") && paramsAttr.includes(":")) {
-                  const props = paramsAttr.split(":").map(s => s.trim());
-                  paramsAttr = props.reduceRight((acc, key, i) => `{ ${key}: ${i == 1 ? `'${el[acc]}'` : acc} }`);
-                }
+                let paramsAttr = getAttr("params");
+                if (!paramsAttr && el.hasAttribute("name")) {
+                  const keys = el.getAttribute("name").match(/\w+/g).map(key => `${key}:`).join``;
+                  paramsAttr = keys + isCheckbox ? "checked" : "value";
+                } else paramsAttr ||= "{}";
                 const params = exFn(paramsAttr);
                 ajax(value, eventName.toUpperCase(), options, params);
               } else {
@@ -311,12 +314,12 @@ function processElements(element) {
         }
       }
     });
-    deferredBindings.forEach(fn => fn());
+    deferredBindings.forEach(b => {
+      const tracked = b.keys?.includes("*") ? [ALL] : trackDependencies(b.fn, b.el, true).concat(b.keys);
+      tracked.forEach(key => addBinding(key, b));
+    })
     return newBindings;
   }
-  
-  // Disconnect old observer if it exists
-  if (HELIUM.observer) HELIUM.observer.disconnect();
   
   // Create new observer
   HELIUM.observer = new MutationObserver(ms => {
@@ -334,22 +337,11 @@ function processElements(element) {
 
 window.heliumTeardown = function() {
   if (HELIUM?.observer) HELIUM.observer.disconnect();
-  HELIUM?.bindings?.clear();
-  HELIUM?.refs?.clear();
-  HELIUM?.parentKeys?.clear();
-  HELIUM?.fnCache?.clear(); 
   HELIUM = null;
 }
 
 // Initialize on load
-document.addEventListener("DOMContentLoaded", () => helium());
-
+document.addEventListener("DOMContentLoaded",_ => helium());
 // Turbo integration
-document.addEventListener("turbo:before-render", () => {
-  if (HELIUM?.observer) HELIUM.observer.disconnect();
-  window.heliumTeardown();
-});
-
-document.addEventListener("turbo:render", () => {
-  helium();
-});
+document.addEventListener("turbo:before-render",_ => window.heliumTeardown());
+document.addEventListener("turbo:render",_ => helium());
