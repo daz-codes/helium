@@ -1,6 +1,6 @@
 {
   "name": "@daz4126/helium",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "main": "helium.js",
   "type": "module",
   "scripts": {
