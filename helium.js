@@ -34,11 +34,11 @@ window.helium = function() {
 
   const update = (data,target,action,template) => {
     const element = target instanceof Node ? target : (HELIUM.refs.get(target) || $(target));
-    if(element){
-      const content = html(template ? template(data) : data);
-      action ? element[action=="replace"?"replaceWith":action](content) : element.innerHTML = content;
-      return content
-    } else state[target] = data
+      if(element){
+        const content = html(template ? template(data) : data);
+        action ? element[action=="replace"?"replaceWith":action](content) : element.innerHTML = content;
+        return content
+      } else state[target] = data
   }  
   
 const ajax = (u,m,o={},p={}) => {
@@ -297,8 +297,12 @@ function processElements(element) {
                 let paramsAttr = getAttr("params");
                 if (!paramsAttr && el.hasAttribute("name")) {
                   const keys = el.getAttribute("name").match(/\w+/g).map(key => `${key}:`).join``;
-                  paramsAttr = keys + isCheckbox ? "checked" : "value";
+                  paramsAttr = keys + (isCheckbox ? "checked" : "value");
                 } else paramsAttr ||= "{}";
+                if (!paramsAttr.trim().startsWith("{") && paramsAttr.includes(":")) {
+                  const props = paramsAttr.split(":").map(s => s.trim());
+                  paramsAttr = props.reduceRight((acc, key, i) => `{ ${key}: ${i == 1 ? `'${el[acc]}'` : acc} }`);
+                }
                 const params = exFn(paramsAttr);
                 ajax(value, eventName.toUpperCase(), options, params);
               } else {
