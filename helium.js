@@ -350,7 +350,3 @@ document.addEventListener("DOMContentLoaded",_ => helium());
 // Turbo integration
 document.addEventListener("turbo:before-render",_ => window.heliumTeardown());
 document.addEventListener("turbo:render",_ => helium());
-
-function hello(){
-  console.log("Hello!!!!")
-}
