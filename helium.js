@@ -32,13 +32,17 @@ window.helium = function() {
   const $ = s => document.querySelector(s);
   const html = s => Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild
 
-  const update = (data,target,action,template) => {
-    const element = target instanceof Node ? target : (HELIUM.refs.get(target) || $(target));
+  const update = (data,targets,actions,template) => {
+    const newTargets = [];
+    targets.forEach((target,i) => {
+    const element = target instanceof Node ? target : (HELIUM.refs.get(target.trim()) || $(target.trim()));
       if(element){
-        const content = html(template ? template(data) : data);
-        action ? element[action=="replace"?"replaceWith":action](content) : element.innerHTML = content;
-        return content
+        const content = template ? template(data) : data;
+        actions[i] ? element[actions[i]=="replace"?"replaceWith":actions[i]](html(content)) : element.innerHTML = content;
+        newTargets.push(actions[i] ? content : element)
       } else state[target] = data
+    })
+    return newTargets
   }  
   
 const ajax = (u,m,o={},p={}) => {
@@ -64,7 +68,7 @@ fetch(u, {
       }).then(d =>
         d.t && "Turbo"
           ? Turbo.renderStreamMessage(d.d)
-          : update(d, o.target, o.loading ? "replace" : o.action, o.template)
+          : update(d, o.target, o.loading ? o.action.map(a => a && "replace") : o.action, o.template)
       ).catch(e => console.error("AJAX:", e.message));
   }
 
@@ -224,15 +228,13 @@ function processElements(element) {
           Object.assign(state, parseEx(value));
         }
         else if (name.startsWith(":") || name.startsWith("data-he-attr:")) {
-          const fn = compile(value, true);
-          deferredBindings.push({el, prop: name.slice(name.startsWith(":") ? 1 : 13), fn});
+          deferredBindings.push({el, prop: name.slice(name.startsWith(":") ? 1 : 13), fn: compile(value, true)});
         }
         else if (he(name, "ref")) {
           HELIUM.refs.set("$" + value, el);
         }
         else if (he(name, "text", "html")) {
-          const fn = compile(value, true);
-          deferredBindings.push({el, prop: he(name, "text") ? "textContent" : "innerHTML", fn});
+          deferredBindings.push({el, prop: he(name, "text") ? "textContent" : "innerHTML", fn: compile(value, true)});
         }
         else if (he(name, "bind")) {
           const event = (isCheckbox || isRadio || isSelect) ? "change" : "input";
@@ -241,7 +243,7 @@ function processElements(element) {
           el.addEventListener(event, inputHandler);
           if (!HELIUM.listeners.has(el)) HELIUM.listeners.set(el, []);
           HELIUM.listeners.get(el).push({receiver: el, event, handler: inputHandler});
-          addBinding(value, {el, prop, fn: compile(value, true)});
+          deferredBindings.push({el, prop, fn: compile(value, true)});
           if (isCheckbox) el.checked = !!state[value];
           else if (isRadio) el.checked = el.value == state[value];
           else el.value = state[value] ?? "";
@@ -251,14 +253,13 @@ function processElements(element) {
           deferredBindings.push({el, prop: "hidden", fn});
         }
         else if (he(name, "calculate")) {
-          const calc = name.split(":")[1];
-          const fn = compile(value, true);
-          deferredBindings.push({el, calc, prop: null, fn});
+          deferredBindings.push({el, calc: name.split(":")[1], prop: null, fn: compile(value, true)});
         }
         else if (he(name, "effect")) {
-          const keys = name.split(":").slice(1);
-          const fn = compile(value, true);
-          deferredBindings.push({el, prop: null, fn, keys});
+          deferredBindings.push({el, prop: null, fn: compile(value, true), keys: name.split(":").slice(1)});
+        }
+        else if (he(name, "import")) {
+          value.split(",").map(s => s.trim()).forEach(v => state[v] = window[v]);
         }
         else if (he(name, "init")) {
           initFn = compile(value, true);
@@ -286,7 +287,9 @@ function processElements(element) {
             if (!mods.includes("outside") || !el.contains(e.target)) {
               if (isHttpMethod) {
                 const getAttr = name => el.getAttribute(`data-he-${name}`) || el.getAttribute(`@${name}`);
-                const [target, action] = (getAttr('target') || "").split(":");
+                const pairs = (getAttr('target') || "").split(",").map(p => p.split(":").map(s => s.trim()));
+const target = pairs.map(([target]) => target);
+const action = pairs.map(([, action]) => action);
                 const options = {
                   ...(getAttr("options") && parseEx(getAttr("options") || "{}")),
                   ...(target && { target }),
@@ -305,9 +308,7 @@ function processElements(element) {
                 }
                 const params = exFn(paramsAttr);
                 ajax(value, eventName.toUpperCase(), options, params);
-              } else {
-                exFn(value);
-              }
+              } else exFn(value);
             }
             if (mods.includes("once")) receiver.removeEventListener(event, handler);
           };
