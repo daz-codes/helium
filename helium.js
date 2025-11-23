@@ -57,7 +57,7 @@ fetch(url, {
     ...(!fd && method !== "GET" && {"Content-Type":"application/json"}),
     ...(sameOrigin && token ? {"X-CSRF-Token": token} : {})
   },
-  body: method === "GET" ? null : (fd ? params : JSON.stringify(parmas)),
+  body: method === "GET" ? null : (fd ? params : JSON.stringify(params)),
   credentials: sameOrigin ? "same-origin" : "omit"
 })
       .then(res => {
