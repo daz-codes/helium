@@ -45,35 +45,35 @@ window.helium = function() {
     return newTargets
   }  
   
-const ajax = (u,m,o={},p={}) => {
-    if(o.loading) o.target = update(o.loading,o.target,o.action) || o.target;
-    const fd = p instanceof FormData, t = document.querySelector('meta[name="csrf-token"]')?.content;
-    const url = new URL(u, window.location.href);
-    const sameOrigin = url.origin === window.location.origin;
-fetch(u, {
-  method: m,
+const ajax = (url,method,options={},params={}) => {
+    if(options.loading) options.target = update(options.loading,options.target,options.action) || options.target;
+    const fd = params instanceof FormData, token = document.querySelector('meta[name="csrf-token"]')?.content;
+    const path = new URL(url, window.location.href);
+    const sameOrigin = path.origin === window.location.origin;
+fetch(url, {
+  method,
   headers: {
     Accept:"text/vnd.turbo-stream.html,application/json,text/html",
-    ...(!fd && m !== "GET" && {"Content-Type":"application/json"}),
-    ...(sameOrigin && t ? {"X-CSRF-Token": t} : {})
+    ...(!fd && method !== "GET" && {"Content-Type":"application/json"}),
+    ...(sameOrigin && token ? {"X-CSRF-Token": token} : {})
   },
-  body: m === "GET" ? null : (fd ? p : JSON.stringify(p)),
+  body: method === "GET" ? null : (fd ? params : JSON.stringify(parmas)),
   credentials: sameOrigin ? "same-origin" : "omit"
 })
-      .then(r => {
-        const type = r.headers.get("content-type") || "";
-        return (type.includes("turbo-stream") ? r.text().then(d => ({ t: true, d })) :
-                type.includes("json")         ? r.json() :
-                                                r.text());
-      }).then(d =>
-        d.t && "Turbo"
-          ? Turbo.renderStreamMessage(d.d)
-          : update(d, o.target, o.loading ? o.action.map(a => a && "replace") : o.action, o.template)
+      .then(res => {
+        const type = res.headers.get("content-type") || "";
+        return (type.includes("turbo-stream") ? res.text().then(data => ({ turbo: true, data })) :
+                type.includes("json")         ? res.json() :
+                                                res.text());
+      }).then(data =>
+        data.turbo && "Turbo"
+          ? Turbo.renderStreamMessage(data.data)
+          : update(data, options.target, options.loading ? options.action.map(a => a && "replace") : options.action, options.template)
       ).catch(e => console.error("AJAX:", e.message));
   }
 
-  const get = (u,t) => ajax(u,"GET",t);
-  const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(m => (u, d, t) => ajax(u, m, t, d));
+  const get = (url,target) => ajax(url,"GET",target);
+  const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(method => (url, params, options) => ajax(url, method, options, params));
   
 const handler = {
     get(t,p,r) {
@@ -117,8 +117,7 @@ function applyBinding(b,e={},elCtx=b.el){
       k.split(/\s+/).forEach(c => el.classList.toggle(c,v)));
 
   if (prop==="style" && r && typeof r==="object")
-    return el.style = Object.entries(r).filter(([,v])=>v)
-      .map(([k,v])=>`${k}:${v}`).join(";");
+  return el.style.cssText = Object.entries(r).map(([k,v])=>v?`${k}:${v}`:'').join(";");
 
   if (prop in el) {
     if (el.type === "radio" && prop != "checked") el.checked = el.value===r;
@@ -162,11 +161,7 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
   const trackProxy = new Proxy(state, {
     get(target, prop) {
       if (typeof prop == 'string') {
-        if (excludeChanged && !accessed.has(prop)) {
-          accessed.set(prop, target[prop]); // Store initial value
-        } else if (!excludeChanged) {
-          accessed.add(prop);
-        }
+        excludeChanged ? !accessed.has(prop) && accessed.set(prop, target[prop]) : accessed.add(prop);
       }
       const val = target[prop];
       return typeof val == "object" && val != null ? new Proxy(val, this) : val;
@@ -175,10 +170,7 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
   
   try { fn.call(null, $, trackProxy, HELIUM.refs); } catch {}
   
-  if (excludeChanged) {
-    return [...accessed.keys()].filter(prop => state[prop] === accessed.get(prop));
-  }
-  return [...accessed];
+  return excludeChanged ? [...accessed.keys()].filter(prop => state[prop] === accessed.get(prop)) : [...accessed];
 };
 
   const cleanup = el => {
@@ -249,8 +241,7 @@ function processElements(element) {
           else el.value = state[value] ?? "";
         }
         else if (he(name, "hidden", "visible")) {
-          const fn = compile(`${he(name, "hidden") ? "!" : ""}!(${value})`, true);
-          deferredBindings.push({el, prop: "hidden", fn});
+          deferredBindings.push({el, prop: "hidden", fn: compile(`${he(name, "hidden") ? "!" : ""}!(${value})`, true)});
         }
         else if (he(name, "calculate")) {
           deferredBindings.push({el, calc: name.split(":")[1], prop: null, fn: compile(value, true)});
