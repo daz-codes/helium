@@ -250,7 +250,7 @@ function processElements(element) {
           deferredBindings.push({el, prop: null, fn: compile(value, true), keys: name.split(":").slice(1)});
         }
         else if (he(name, "import")) {
-          value.split(",").map(s => s.trim()).forEach(v => state[v] = window[v]);
+          value.split(",").map(s => s.trim()).forEach(v => state[v] = globalThis[v]);
         }
         else if (he(name, "init")) {
           initFn = compile(value, true);
