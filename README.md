@@ -423,35 +423,25 @@ You can specify multiple targets with different actions using comma-separated va
 </button>
 ```
 
-#### @action
+#### :action
 
-Specifies how to insert the response into the target:
-- `replace` - Replace the entire element
-- `append` - Append to the end of the element's children
-- `prepend` - Prepend to the beginning of the element's children
-- `before` - Insert before the element
-- `after` - Insert after the element
+An action can be appended to the target to specify how to insert the response into the target
+
+The following actions can all be used:
+
+- `:replace` - Replace the entire element
+- `:append` - Append to the end of the element's children
+- `:prepend` - Prepend to the beginning of the element's children
+- `:before` - Insert before the element
+- `:after` - Insert after the element
 
 If omitted, defaults to replacing the innerHTML.
 
 ```html
 <button 
   @get="/api/users"
-  @target="#user-list"
-  @action="append">
+  @target="#user-list:append"
   Load More Users
-</button>
-```
-
-**Multiple Actions:**
-When using multiple targets, you can specify different actions for each:
-
-```html
-<button 
-  @get="/api/stats"
-  @target="#count, #chart"
-  @action="replace, append">
-  Load Stats
 </button>
 ```
 
@@ -545,7 +535,6 @@ Additional fetch options (as an object):
 
 **Alias:** All HTTP attributes have `data-he-` aliases:
 - `data-he-target`
-- `data-he-action`
 - `data-he-params`
 - `data-he-template`
 - `data-he-loading`
@@ -953,28 +942,223 @@ If you're using a Content Security Policy, note that Helium uses `new Function()
 
 ### Performance Tips
 
-**1. Use @calculate for derived state**
-```html
-<!-- ✅ Good: Calculates only when dependencies change -->
-<div @calculate:total="items.reduce((sum, i) => sum + i.price, 0)"></div>
+**Use @calculate for derived values:**
 
-<!-- ❌ Avoid: Recalculates on every render -->
-<div @text="items.reduce((sum, i) => sum + i.price, 0)"></div>
+```html
+<!-- Good: Calculated once, updates automatically -->
+<div @calculate:total="items.reduce((sum, item) => sum + item.price, 0)"></div>
+<div @text="total"></div>
+
+<!-- Avoid: Recalculates on every render -->
+<div @text="items.reduce((sum, item) => sum + item.price, 0)"></div>
 ```
 
-**2. Debounce expensive operations**
+**Debounce expensive operations:**
+
 ```html
-<input @input.debounce:500="performExpensiveSearch()">
+<input @input.debounce:500="search()" placeholder="Search...">
 ```
 
-**3. Use refs instead of querySelector**
-```html
-<!-- ✅ Good: Direct reference -->
-<div @ref="modal"></div>
-<button @click="$modal.show()">Open</button>
+**Use @effect for side effects:**
 
-<!-- ❌ Slower: Query on every click -->
-<button @click="$('#modal').show()">Open</button>
+```html
+<!-- Persist to localStorage when username changes -->
+<div @effect:username="localStorage.setItem('user', username)"></div>
+
+<!-- Track analytics on state changes -->
+<div @effect:page="analytics.track('page_view', { page })"></div>
 ```
 
-**4. Limit @effect:* usage**
+### Structuring Larger Apps
+
+**Organize state at the root:**
+
+```html
+<div @helium @data="{ 
+  user: { name: '', email: '' },
+  cart: { items: [], total: 0 },
+  ui: { modal: false, loading: false }
+}">
+  <!-- Child elements can access all state -->
+</div>
+```
+
+**Use refs for complex interactions:**
+
+```html
+<div @ref="modal" @hidden="!showModal" class="modal">
+  <button @click="$modal.close()">Close</button>
+</div>
+```
+
+**Break down complex expressions:**
+
+```html
+<!-- Instead of complex inline logic -->
+<div @html="items.filter(i => i.active).map(i => `<li>${i.name}</li>`).join('')"></div>
+
+<!-- Use @calculate to break it down -->
+<div @calculate:activeItems="items.filter(i => i.active)"></div>
+<div @html="activeItems.map(i => `<li>${i.name}</li>`).join('')"></div>
+```
+
+### Debugging Tips
+
+**Inspect state with @effect:**
+
+```html
+<div @effect:*="console.log('State changed:', $data)"></div>
+```
+
+**Use @init for debugging:**
+
+```html
+<div @init="console.log('Helium initialized', $data)"></div>
+```
+
+**Check element references:**
+
+```html
+<div @ref="myElement"></div>
+<button @click="console.log($myElement)">Inspect Element</button>
+```
+
+### Common Pitfalls
+
+**❌ Don't mutate arrays/objects without triggering reactivity:**
+
+```javascript
+helium({
+  addItem(items, item) {
+    items.push(item); // ❌ Won't trigger updates
+  }
+})
+```
+
+**✅ Pass $data and update through it:**
+
+```javascript
+helium({
+  addItem(data, item) {
+    data.items.push(item); // ✅ Triggers updates
+  }
+})
+```
+
+```html
+<button @click="addItem($data, newItem)">Add Item</button>
+```
+
+**❌ Don't use magic variables inside functions:**
+
+```javascript
+helium({
+  badFunction() {
+    console.log($data); // ❌ $data is undefined
+  }
+})
+```
+
+**✅ Pass them as arguments:**
+
+```javascript
+helium({
+  goodFunction(data) {
+    console.log(data); // ✅ Works!
+  }
+})
+```
+
+```html
+<button @click="goodFunction($data)">Works!</button>
+```
+
+## Security Considerations
+
+### XSS Protection
+
+**Always sanitize user input when using @html:**
+
+```html
+<!-- ❌ Dangerous if userInput contains scripts -->
+<div @html="userInput"></div>
+
+<!-- ✅ Sanitize first -->
+<div @html="sanitize(userInput)"></div>
+```
+
+Consider using a sanitization library like [DOMPurify](https://github.com/cure53/DOMPurify):
+
+```javascript
+import DOMPurify from 'dompurify';
+
+helium({
+  sanitize(html) {
+    return DOMPurify.sanitize(html);
+  }
+});
+```
+
+**Use @text for plain text:**
+
+```html
+<!-- ✅ Safe - automatically escapes HTML -->
+<div @text="userInput"></div>
+```
+
+### CSRF Protection
+
+Helium automatically includes CSRF tokens in same-origin requests. Add this meta tag to your HTML:
+
+```html
+<meta name="csrf-token" content="your-csrf-token">
+```
+
+All POST, PUT, PATCH, and DELETE requests will include the `X-CSRF-Token` header automatically.
+
+### Content Security Policy
+
+If you're using a strict CSP, you may need to allow `'unsafe-eval'` since Helium uses `new Function()` to compile expressions, or use a hash/nonce for the script.
+
+## Error Handling
+
+### JavaScript Expression Errors
+
+If an expression throws an error, Helium catches it silently and continues. Check the browser console for error messages.
+
+```html
+<!-- If items is undefined, this won't crash the page -->
+<div @text="items.length"></div>
+```
+
+### HTTP Request Errors
+
+Failed requests log errors to the console. Handle them in your expressions:
+
+```html
+<button 
+  @post="/api/save"
+  @params="{ data: formData }"
+  @target="#message">
+  Save
+</button>
+
+<div id="message" @html="saveError || 'Ready to save'"></div>
+```
+
+### Invalid Attribute Syntax
+
+Helium gracefully handles invalid syntax. If an expression can't be compiled, it treats it as a literal value.
+
+
+## Contributing
+
+Helium is open source! Contributions, issues, and feature requests are welcome.
+
+- GitHub: [github.com/daz-codes/helium](https://github.com/daz-codes/helium)
+- Report issues: Create an issue on GitHub
+- Suggest features: Open a discussion on GitHub
+
+## License
+
+MIT License - feel free to use Helium in personal and commercial projects.
