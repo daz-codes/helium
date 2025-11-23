@@ -14,6 +14,17 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 [See more examples here](https://codepen.io/daz4126/pen/YPwwdBK)
 
+## Why Helium?
+
+Helium is designed for developers who want:
+- **Zero build step** - Just add a script tag and go
+- **Minimal learning curve** - If you know HTML and basic JavaScript, you're ready
+- **Tiny footprint** - Under 3KB minified and gzipped
+- **Progressive enhancement** - Works alongside any backend framework
+- **No virtual DOM** - Direct DOM manipulation for maximum performance
+
+Perfect for adding interactivity to server-rendered pages, prototypes, or small-to-medium applications where a full framework would be overkill.
+
 ## Installation
 
 ### CDN (No build step required!)
@@ -40,13 +51,40 @@ import helium from "@daz4126/helium"
 helium()
 ```
 
+### Initialization
+
+By default, Helium initializes automatically when the DOM is ready. It listens for the `DOMContentLoaded` event and processes all Helium attributes in the page.
+
+You can also manually initialize or re-initialize Helium:
+
+```javascript
+// Manual initialization
+helium()
+
+// With default data and functions
+helium({
+  count: 0,
+  username: "Guest",
+  greet(name) {
+    alert(`Hello, ${name}!`)
+  }
+})
+```
+
 ## Helium Attributes
 
-Helium uses custom attributes to add interactivity to HTML elements. To identify them, they all start with `@`, although there are also data attribute aliases that can be used instead.
+Helium uses custom attributes to add interactivity to HTML elements. To identify them, they all start with `@`, although there are also data attribute aliases that can be used instead (useful if you need valid HTML or work with strict templating systems).
 
 ### @helium
 
 This attribute sets the root element. Helium attributes can only be used on this element and its children. If not set then it defaults to `document.body`.
+
+```html
+<div @helium>
+  <!-- All Helium attributes work here -->
+  <button @click="count++">Click me</button>
+</div>
+```
 
 **Alias:** `data-helium`
 
@@ -64,6 +102,15 @@ You can also use expressions. This will update the textContent of the element wi
 <span @text="name.toUpperCase()">Dave</span>
 ```
 
+Multiple elements can reference the same variable and they'll all update automatically:
+
+```html
+<div @data="{ price: 10, quantity: 2 }">
+  <p>Price: $<span @text="price">0</span></p>
+  <p>Quantity: <span @text="quantity">0</span></p>
+</div>
+```
+
 **Alias:** `data-he-text`
 
 ### @html
@@ -74,6 +121,14 @@ Similar to `@text`, but inserts HTML content into the element's innerHTML. Suppo
 <div @html="'<strong>Bold text</strong>'"></div>
 ```
 
+**Arrays are automatically joined:**
+
+```html
+<ul @html="items.map(item => `<li>${item}</li>`)"></ul>
+```
+
+**⚠️ Security Warning:** Be careful with `@html` when displaying user-generated content, as it can introduce XSS vulnerabilities. Always sanitize untrusted input before using it with `@html`.
+
 **Alias:** `data-he-html`
 
 ### @bind
@@ -82,9 +137,29 @@ Creates a 2-way binding between an input element's value and a variable. Whateve
 
 ```html
 <input @bind="name" placeholder="Enter your name">
+<p>Hello, <span @text="name">stranger</span>!</p>
 ```
 
-Works with text inputs, textareas, checkboxes, radio buttons, and select elements.
+Works with:
+- Text inputs and textareas (binds to `value`)
+- Checkboxes (binds to `checked`)
+- Radio buttons (binds to selected `value`)
+- Select elements (binds to selected `value`)
+
+```html
+<div @data="{ agreed: false, color: 'blue', size: 'medium' }">
+  <input type="checkbox" @bind="agreed"> I agree
+  
+  <input type="radio" name="color" value="red" @bind="color"> Red
+  <input type="radio" name="color" value="blue" @bind="color"> Blue
+  
+  <select @bind="size">
+    <option value="small">Small</option>
+    <option value="medium">Medium</option>
+    <option value="large">Large</option>
+  </select>
+</div>
+```
 
 **Alias:** `data-he-bind`
 
@@ -97,15 +172,22 @@ Makes the element hidden or visible depending on the result of a JavaScript expr
 <div @hidden="count <= 3">Hidden when count is 3 or less</div>
 ```
 
+These work by toggling the `hidden` attribute, which uses CSS `display: none`.
+
 **Alias:** `data-he-hidden` & `data-he-visible`
 
 ### @data
 
-Initializes variables that can be used in JavaScript expressions.
+Initializes variables that can be used in JavaScript expressions. This is typically placed on a parent element to set up the initial state for a component or section.
 
 ```html
-<div @data="{ count: 0, open: false }"></div>
+<div @data="{ count: 0, open: false }">
+  <button @click="count++">Increment</button>
+  <div @visible="open">Modal content</div>
+</div>
 ```
+
+Variables defined with `@data` are available to all child elements and will trigger reactive updates when changed.
 
 **Alias:** `data-he-data`
 
@@ -117,20 +199,35 @@ Creates a reference to the element that can be used in JavaScript expressions. F
 <ul @ref="list"></ul>
 ```
 
-This element can then be accessed in other JavaScript expressions as `$list`, for example:
+This element can then be accessed in other JavaScript expressions as `$list` (note the `$` prefix is added automatically), for example:
 
 ```html
-<button @click="appendTo($list)">Add Task</button>
+<ul @ref="list"></ul>
+<button @click="$list.classList.add('highlight')">Highlight List</button>
 ```
+
+Refs are useful for:
+- Focusing inputs: `$input.focus()`
+- Scrolling to elements: `$section.scrollIntoView()`
+- Measuring elements: `$box.getBoundingClientRect()`
+- Direct DOM manipulation when needed
 
 **Alias:** `data-he-ref`
 
 ### @init
 
-A JavaScript expression that will run once when Helium initializes.
+A JavaScript expression that will run once when Helium initializes. Perfect for setting up initial state, fetching data, or starting timers.
 
 ```html
 <div @init="timestamp = Date.now()"></div>
+```
+
+More complex example:
+
+```html
+<div @init="users = []; $get('/api/users')">
+  <ul @html="users.map(u => `<li>${u.name}</li>`)"></ul>
+</div>
 ```
 
 **Alias:** `data-he-init`
@@ -140,254 +237,94 @@ A JavaScript expression that will run once when Helium initializes.
 Creates a computed property that automatically updates when its dependencies change. The calculated value is stored in a state variable.
 
 ```html
-<div @calculate:total="price * quantity"></div>
+<div @data="{ price: 10, quantity: 2 }">
+  <div @calculate:total="price * quantity"></div>
+  <p>Total: $<span @text="total">0</span></p>
+</div>
 ```
 
 This will create a `total` variable that automatically recalculates whenever `price` or `quantity` changes.
+
+**Practical examples:**
+
+```html
+<!-- Shopping cart total -->
+<div @calculate:total="items.reduce((sum, item) => sum + item.price * item.qty, 0)"></div>
+
+<!-- Full name from parts -->
+<div @calculate:fullName="firstName + ' ' + lastName"></div>
+
+<!-- Validation state -->
+<div @calculate:isValid="email.includes('@') && password.length >= 8"></div>
+```
+
+Calculated values are prioritized and updated before other bindings, so you can safely use them in other expressions.
 
 **Alias:** `data-he-calculate`
 
 ### @effect
 
-Runs a side effect whenever specified dependencies change. Use `:*` to run on any state change, or list specific dependencies.
+Runs a side effect whenever specified dependencies change. Use `:*` to run on any state change, or list specific dependencies separated by colons.
 
 ```html
 <!-- Run on any state change -->
-<div @effect:*="console.log('State changed')"></div>
+<div @effect:*="console.log('State changed:', $data)"></div>
 
 <!-- Run when specific variables change -->
 <div @effect:count:name="console.log('Count or name changed')"></div>
 ```
 
+**Practical examples:**
+
+```html
+<!-- Save to localStorage when username changes -->
+<div @effect:username="localStorage.setItem('user', username)"></div>
+
+<!-- Log analytics event when page changes -->
+<div @effect:currentPage="analytics.track('pageView', currentPage)"></div>
+
+<!-- Update document title -->
+<div @effect:unreadCount="document.title = `(${unreadCount}) Messages`"></div>
+
+<!-- Sync multiple values -->
+<div @effect:darkMode="document.body.classList.toggle('dark', darkMode)"></div>
+```
+
+Effects run after all other bindings have been updated, making them perfect for side effects like logging, storage, or external API calls.
+
 **Alias:** `data-he-effect`
 
-## Event Listeners & Handlers
+### @import
 
-Event listeners and handlers can be created by prepending `@` before the event name, for example `@click="count++"` will run the code `count++` when the element is clicked on.
-
-```html
-<button @click="count++">Increment</button>
-```
-
-### Event Modifiers
-
-You can add modifiers by appending them with a dot (`.`) after the event name:
-
-- **prevent** - Prevents the default browser behavior
-- **once** - Only runs the event handler once
-- **outside** - Only fires when the event happens outside the element
-- **document** - Attaches the listener to the document instead of the element
-- **debounce** - Debounces the event handler (default 300ms)
-- **debounce:500** - Debounces with custom delay in milliseconds
-- **shift, ctrl, alt, meta** - Only fires if the modifier key is pressed
-- **Key names** - For keyboard events, specify which key (e.g., `@keydown.enter`, `@keyup.esc`)
-
-Examples:
+Imports global functions or variables into Helium's scope, making them available in expressions without the `window.` prefix.
 
 ```html
-<button @click.prevent="submitForm()">Save</button>
-<button @click.once="initialize()">Initialize</button>
-<div @click.outside="closeModal()">Modal</div>
-<input @input.debounce:500="search()">
-<input @keydown.enter="submit()">
-<input @keydown.ctrl.s.prevent="save()">
-```
-
-**Alias:** Prepend the event name with `data-he-on`, for example `data-he-onclick="count++"`
-
-## HTTP Requests
-
-Helium includes built-in support for making HTTP requests directly from event handlers.
-
-### Available HTTP Methods
-
-- `@get` - GET request
-- `@post` - POST request
-- `@put` - PUT request
-- `@patch` - PATCH request
-- `@delete` - DELETE request
-
-The HTTP method is triggered by the element's default event (click for buttons, submit for forms, input for inputs, etc.).
-
-```html
-<button @get="/api/data">Load Data</button>
-<form @post="/api/users">Submit</form>
-```
-
-### HTTP Request Options
-
-Configure requests using these additional attributes:
-
-- **@target** or **data-he-target** - Where to insert the response (CSS selector or ref)
-- **@action** or **data-he-action** - How to insert: `replace`, `append`, `prepend`, `before`, `after`
-- **@params** or **data-he-params** - Request parameters (object or FormData)
-- **@options** or **data-he-options** - Additional fetch options
-- **@template** or **data-he-template** - Template function to transform response
-- **@loading** or **data-he-loading** - Loading state content to show during request
-
-```html
-<button 
-  @get="/api/users"
-  @target="#user-list"
-  @action="replace">
-  Load Users
-</button>
-
-<form 
-  @post="/api/users"
-  @params="{ name: username, email: email }"
-  @target="#message"
-  @loading="Saving...">
-  <input @bind="username">
-  <input @bind="email">
-  <button>Save</button>
-</form>
-```
-
-### Special Features
-
-- Automatically includes CSRF tokens from `<meta name="csrf-token">` for same-origin requests
-- Supports Turbo Stream responses
-- Handles JSON and HTML responses
-- Works with FormData for file uploads
-
-## Dynamic Attributes
-
-It's possible to dynamically update the attributes of elements. To do this, just prepend a `:` in front of the attribute name and write a JavaScript expression that evaluates to the desired attribute value. This will update whenever any of the Helium variables change value.
-
-In the following example, the `<div>` element has a dynamic class attribute that will be 'normal' if the count is less than 10, but 'danger' if the count is 10 or more:
-
-```html
-<div :class="count < 10 ? 'normal' : 'danger'">
-    The count is <b @text="count"></b>
+<div @import="myFunction, myVariable">
+  <button @click="myFunction()">Call imported function</button>
+  <span @text="myVariable">0</span>
 </div>
 ```
 
-### Special Dynamic Attributes
-
-**:class** - Can accept an object to toggle multiple classes:
-
-```html
-<div :class="{ active: isActive, disabled: !isEnabled }"></div>
-```
-
-**:style** - Can accept an object for multiple styles:
-
-```html
-<div :style="{ color: textColor, fontSize: size + 'px' }"></div>
-```
-
-**Alias:** `data-he-attr:attributeName`
-
-## Magic Variables
-
-These special variables are available in all JavaScript expressions:
-
-- **$** - Alias for `document.querySelector`
-- **$el** - Reference to the current element
-- **$event** - The event object (in event handlers)
-- **$data** - The reactive data object containing all Helium variables
-- **$html** - Helper function to create HTML elements from strings
-- **$get, $post, $put, $patch, $delete** - HTTP request functions
-- **$refs** - All elements marked with `@ref`
-
-Examples:
-
-```html
-<div @click="$('#header').classList.add('active')">Activate Header!</div>
-<div @click="$el.remove()">Click to remove me!</div>
-<div @click="console.log($event.timeStamp)">Log the timestamp</div>
-<div @click="console.log($data)">Log all data</div>
-```
-
-## Default Variables and Functions
-
-The helium function accepts a single JavaScript object as an argument. This can include default variable values and functions that can then be called inside the JavaScript expressions.
-
-For example, the following will set the count variable to an initial value of 29 and the name variable to "Helium":
+If you have global functions defined elsewhere:
 
 ```javascript
-helium({ 
-  count: 29, 
-  name: "Helium"
-})
+function hello() {
+  console.log("Hello!!!!")
+}
 ```
 
-The following example shows how a function can be added into Helium and then used by event listeners:
-
-```javascript
-helium({ 
-  appendTo(element) {
-    const li = document.createElement("li")
-    li.textContent = "New Item"
-    element.append(li)
-  }
-})
-```
-
-This function can then be called from an event handler, such as `@click`:
+You can import them:
 
 ```html
-<ul @ref="list"></ul>
-<button @click="appendTo($list)">Append item to list</button>
+<div @import="hello">
+  <button @click="hello()">Say Hello</button>
+</div>
 ```
 
-### Important Note About Functions
+This is useful for integrating Helium with existing JavaScript code or third-party libraries.
 
-Magic variables and Helium variables are not available inside these functions. However, you can pass them as arguments and they will then be available in the function. 
+**Alias:** `data-he-import`
 
-If you pass Helium variables, they will be passed as values and updating them inside the function will **not** trigger a reactive update. A solution is to pass the magic `$data` attribute as an argument, then updating the properties of this inside the function **will** trigger a reactive update.
+## Event Listeners & Handlers
 
-So instead of this:
-
-```html
-<button @click="increment(count)">Increment Count</button>
-```
-
-```javascript
-helium({ 
-  increment(count, n = 1) {
-    count += n  // Won't trigger reactivity
-  }
-})
-```
-
-You should do this instead:
-
-```html
-<button @click="increment($data)">Increment Count</button>
-```
-
-```javascript
-helium({ 
-  increment(data, n = 1) {
-    data.count += n  // Will trigger reactivity
-  }
-})
-```
-
-## Advanced Features
-
-### DOM Morphing
-
-If Idiomorph is available, Helium will use it for efficient DOM updates when updating innerHTML, preserving element state and reducing flicker.
-
-### List Rendering
-
-When rendering arrays with `@html`, Helium can efficiently update lists by using `key` or `data-key` attributes on child elements for tracking.
-
-```html
-<ul @html="items.map(item => `<li key='${item.id}'>${item.name}</li>`)"></ul>
-```
-
-### MutationObserver
-
-Helium automatically observes the DOM and processes new elements as they're added, making it work seamlessly with dynamically inserted content.
-
-### CSRF Protection
-
-Helium automatically includes CSRF tokens from `<meta name="csrf-token">` elements in same-origin requests for enhanced security.
-
-## Browser Compatibility
-
-Helium uses modern JavaScript features including Proxy, MutationObserver, and ES6 syntax. It works in all modern browsers that support ES6 modules.
+Event listeners and handlers can be created by prepending `@` before the event
