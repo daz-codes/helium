@@ -34,7 +34,7 @@ window.helium = function() {
 
   const update = (data,targets,actions,template) => {
     const newTargets = [];
-    targets.forEach((target,i) => {
+    targets?.forEach((target,i) => {
     const element = target instanceof Node ? target : (HELIUM.refs.get(target.trim()) || $(target.trim()));
       if(element){
         const content = template ? template(data) : data;
@@ -46,7 +46,7 @@ window.helium = function() {
   }  
   
 const ajax = (url,method,options={},params={}) => {
-    if(options.loading) options.target = update(options.loading,options.target,options.action) || options.target;
+    if(options.loading && options.target) options.target = update(options.loading,options.target,options.action) || options.target;
     const fd = params instanceof FormData, token = document.querySelector('meta[name="csrf-token"]')?.content;
     const path = new URL(url, window.location.href);
     const sameOrigin = path.origin === window.location.origin;
@@ -278,9 +278,9 @@ function processElements(element) {
             if (!mods.includes("outside") || !el.contains(e.target)) {
               if (isHttpMethod) {
                 const getAttr = name => el.getAttribute(`data-he-${name}`) || el.getAttribute(`@${name}`);
-                const pairs = (getAttr('target') || "").split(",").map(p => p.split(":").map(s => s.trim()));
-const target = pairs.map(([target]) => target);
-const action = pairs.map(([, action]) => action);
+                const pairs = getAttr('target')?.split(",")?.map(p => p.split(":").map(s => s.trim()));
+const target = pairs?.map(([target]) => target);
+const action = pairs?.map(([, action]) => action);
                 const options = {
                   ...(getAttr("options") && parseEx(getAttr("options") || "{}")),
                   ...(target && { target }),
