@@ -12,7 +12,7 @@ Here's a simple example of a button that counts the number of times it has been 
 
 It's really simple to use - just sprinkle the magic @attributes into your HTML and watch it come alive!
 
-[See more examples here](https://codepen.io/daz4126/pen/YPwwdBK)
+[See more examples here](https://codepen.io/daz4126/pen/ogxGMX)
 
 ## Why Helium?
 
@@ -367,6 +367,8 @@ You can add modifiers by appending them with a dot (`.`) after the event name:
 
 Helium includes built-in support for making HTTP requests directly from event handlers. This makes it easy to load data, submit forms, and update parts of your page without writing fetch code.
 
+[See some examples here](https://codepen.io/daz4126/pen/dPMVGdX)
+
 ### Available HTTP Methods
 
 - `@get` - GET request
@@ -463,6 +465,17 @@ Specifies the request parameters. Can be:
 ```
 
 **Shorthand Syntax:**
+
+You can write the params in shorthand using `:` separated string of attributes:
+
+```html
+<!-- Creates { user: { name: [value] } } -->
+<button @post="/api/save" @params="user:name:value" name="value">
+  Save
+</button>
+```
+
+**Magic Parmas Syntax:**
 If the element has a `name` attribute, Helium automatically extracts its value:
 
 ```html
@@ -476,14 +489,6 @@ For checkboxes:
 <!-- Sends { agreed: true/false } -->
 <input type="checkbox" name="agreed">
 <button @post="/api/consent" name="agreed">Submit</button>
-```
-
-**Nested Object Syntax:**
-```html
-<!-- Creates { user: { name: [value] } } -->
-<button @post="/api/save" @params="user:name:value" name="value">
-  Save
-</button>
 ```
 
 **FormData Example:**
@@ -689,6 +694,8 @@ HTTP request functions that can be called programmatically:
   Create User
 </button>
 ```
+
+The arguments are `url`,`params` (not for `$get`) and `options`. `options` is an object that can include the properties `loading`,`target`, `template`
 
 ### $refs
 Object containing all elements marked with `@ref` (prefixed with `$`):
