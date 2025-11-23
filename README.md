@@ -24,17 +24,6 @@ Helium is designed for developers who want:
 - **Template-first** - Your HTML is the source of truth, not JavaScript
 - **Progressive enhancement** - Add interactivity gradually where you need it
 
-**When to use Helium:**
-- Server-rendered apps that need sprinkles of interactivity
-- Prototypes and small projects
-- When you want Alpine.js-style syntax but lighter
-- Progressive enhancement of static HTML
-
-**Consider alternatives when:**
-- Building large SPAs (use React, Vue, Svelte)
-- You need complex state management
-- You want a full backend integration (consider htmx)
-
 ## Installation
 
 ### CDN (No build step required!)
