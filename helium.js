@@ -166,12 +166,18 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
   return excludeChanged ? [...accessed.keys()].filter(prop => state[prop] === accessed.get(prop)) : [...accessed];
 };
 
-  const cleanup = el => {
-    [el,...el.querySelectorAll('*')].forEach(e => {
-      HELIUM.listeners.get(e)?.forEach(({receiver,event,handler}) => receiver.removeEventListener(event,handler));
+const cleanup = el => {
+  const elementsToClean = [el, ...el.querySelectorAll('*')];
+  for (const e of elementsToClean) {
+    const listeners = HELIUM.listeners.get(e);
+    if (listeners) {
+      for (const {receiver, event, handler} of listeners) {
+        receiver.removeEventListener(event, handler);
+      }
       HELIUM.listeners.delete(e);
-    });
-  };
+    }
+  }
+};
 
 async function processElements(element) {
     const newBindings = [];
