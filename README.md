@@ -18,11 +18,10 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 Helium is designed for developers who want:
 
-- **Zero build step** - Works directly in the browser with a simple script tag
-- **Minimal learning curve** - If you know HTML and basic JavaScript, you're ready
-- **Ultra-lightweight** - Under 3KB minified and gzipped
-- **Template-first** - Your HTML is the source of truth, not JavaScript
-- **Progressive enhancement** - Add interactivity gradually where you need it
+- **Lightweight** - Just over 3KB minified and gzipped
+- **Powerful** - Declarative JavaScript in your HTML
+- **Zero build step** - Works directly in the browser with no compiling
+- **Easy to learn ** - If you know HTML and basic JavaScript, you're ready
 
 ## Installation
 
