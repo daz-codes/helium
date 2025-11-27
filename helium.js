@@ -196,20 +196,25 @@ async function processElements(element) {
   
     const importPromises = [];
   
-    heElements.forEach(el => {
+    heElements.forEach((el) => {
       const importAttr = el.getAttribute("@import") || el.getAttribute("data-he-import");
       if (importAttr) {
-        importAttr.split(",").map(m => m.trim()).forEach(moduleName => {
-          importPromises.push(
-            import(("helium_" + "modules/") + moduleName);
-              .then(module => {
-                Object.keys(module).forEach(key => state[key] = module[key]);
-              })
-              .catch(error => {
-                console.error(`Failed to import module: ${moduleName}`, error.message);
-              })
-          );
-        });
+        importAttr.split(",").map((m) => m.trim()).forEach((moduleName) => {
+            importPromises.push(
+              import("helium_" + "modules/" + moduleName)
+                .then((module) => {
+                  Object.keys(module).forEach(
+                    (key) => (state[key] = module[key]),
+                  );
+                })
+                .catch((error) => {
+                  console.error(
+                    `Failed to import module: ${moduleName}`,
+                    error.message,
+                  );
+                }),
+            );
+          });
       }
     });
   
