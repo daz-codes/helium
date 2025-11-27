@@ -184,8 +184,13 @@ async function processElements(element) {
     const newBindings = [];
     const deferredBindings = [];
 
-    const heElements = [element, ...element.querySelectorAll("*")]
-      .filter(e => !HELIUM.processed.has(e) && [...e.attributes].some(a => /^(@|:|data-he)/.test(a.name)));
+   const heElements = [element, ...element.querySelectorAll("*")].filter(e => {
+      if (HELIUM.processed.has(e)) return false;
+      for (let i = 0; i < e.attributes.length; i++) {
+        if (/^(@|:|data-he)/.test(e.attributes[i].name)) return true;
+      }
+      return false;
+    });
 
     const addBinding = (val, b) => {
       HELIUM.bindings.set(val, b.calc ? [b,...(HELIUM.bindings.get(val) || [])] : [...(HELIUM.bindings.get(val) || []), b]);
