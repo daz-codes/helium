@@ -336,10 +336,15 @@ const action = pairs.map(([, action]) => action);
   }
   
   // Create new observer
-  HELIUM.observer = new MutationObserver(ms => {
+  HELIUM.observer = new MutationObserver(async (ms) => {
     for (const m of ms) {
-      m.removedNodes.forEach(n => n.nodeType === 1 && cleanup(n));
-      m.addedNodes.forEach(n => n.nodeType === 1 && !HELIUM.processed.has(n) && processElements(n).forEach(applyBinding));
+      m.removedNodes.forEach((n) => n.nodeType === 1 && cleanup(n));
+      m.addedNodes.forEach(async (n) => {
+        if (n.nodeType === 1 && !HELIUM.processed.has(n)) {
+          const bindings = await processElements(n);
+          bindings?.forEach(applyBinding);
+        }
+      });
     }
   });
   HELIUM.observer.observe(root, { childList: true, subtree: true });
