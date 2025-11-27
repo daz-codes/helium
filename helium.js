@@ -137,7 +137,6 @@ const compile = (expr, withReturn = false) => {
   try {
     const fn = new Function(
       "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
-      ...Object.keys(state), ...[...HELIUM.refs.keys()],
       withReturn 
         ? `with($data){return(${expr.trim()})}` 
         : `with($data){${expr.trim()}}`
@@ -145,17 +144,7 @@ const compile = (expr, withReturn = false) => {
     HELIUM.fnCache.set(key, fn);
     return fn;
   } catch {
-    try {
-      const fn = new Function(
-        "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
-        ...Object.keys(state), ...[...HELIUM.refs.keys()],
-        `with($data){${expr.trim()}}`
-      );
-      HELIUM.fnCache.set(key, fn);
-      return fn;
-    } catch {
-      return () => expr;
-    }
+    // ... fallback
   }
 };
 
@@ -225,7 +214,7 @@ async function processElements(element) {
       HELIUM.processed.add(el);
       
       const attrs = el.attributes;
-      const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(state), ...[...HELIUM.refs.values()]);
+      const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del);
       const inputType = el.type?.toLowerCase();
       const isCheckbox = inputType == "checkbox", isRadio = inputType == "radio", isSelect = el.tagName == "SELECT";
 
@@ -290,7 +279,7 @@ async function processElements(element) {
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
           const _handler = e => {
-    const exFn = v => compile(v,true)($, state, e, el, html, get, post, put, patch, del, ...Object.values(state), ...[...HELIUM.refs.values()])
+    const exFn = v => compile(v,true)($, state, e, el, html, get, post, put, patch, del)
             if (mods.includes("prevent")) e.preventDefault();
             const keyMods = {shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey"};
             for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;
@@ -360,7 +349,7 @@ const action = pairs.map(([, action]) => action);
   
   const initialBindings = await processElements(root);
   initialBindings.forEach(applyBinding);
-  if(initFn) initFn($, state, {}, {}, html, get, post, put, patch, del, ...Object.values(state), ...[...HELIUM.refs.values()])
+  if(initFn) initFn($, state, {}, {}, html, get, post, put, patch, del)
 }
 
 window.heliumTeardown = function() {
