@@ -21,7 +21,7 @@ Helium is designed for developers who want:
 - **Lightweight** - Just over 3KB minified and gzipped
 - **Powerful** - Declarative JavaScript in your HTML
 - **Zero build step** Works directly in the browser with no compiling
-- **Easy to learn ** If you know HTML and basic JavaScript, you're ready
+- **Easy to learn** If you know HTML and basic JavaScript, you're ready
 
 ## Installation
 
