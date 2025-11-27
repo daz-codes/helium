@@ -8,6 +8,7 @@ let HELIUM = null;
 window.helium = function() {
   let initFn;
   const ALL = Symbol("all");
+  const HE_ATTR_REGEX = /^(@|:|data-he)/;
   const he = (n, ...a) => {
     const prefix = n.split(/[.:]/)[0];
     if (prefix === ":" || prefix === "") return false;
@@ -179,7 +180,7 @@ async function processElements(element) {
    const heElements = [element, ...element.querySelectorAll("*")].filter(e => {
       if (HELIUM.processed.has(e)) return false;
       for (let i = 0; i < e.attributes.length; i++) {
-        if (/^(@|:|data-he)/.test(e.attributes[i].name)) return true;
+        if (HE_ATTR_REGEX.test(e.attributes[i].name)) return true;
       }
       return false;
     });
