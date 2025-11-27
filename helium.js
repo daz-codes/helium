@@ -192,19 +192,26 @@ async function processElements(element) {
       b.calc ? newBindings.unshift(b) : newBindings.push(b);
     };
   
-  heElements.forEach(async el => {
+    const importPromises = [];
+  
+    heElements.forEach(el => {
       const importAttr = el.getAttribute("@import") || el.getAttribute("data-he-import");
-      if (importAttr) {        
-         importAttr.split(",").map(m => m.trim()).forEach(async moduleName => {
-          try {
-            const module = await import(`helium_modules/${moduleName}.js`);
-            Object.keys(module).forEach(key => state[key] = module[key]);
-          } catch (error) {
-            console.error(`Failed to import module: ${moduleName}`, error.message);
-          }
-        })
+      if (importAttr) {
+        importAttr.split(",").map(m => m.trim()).forEach(moduleName => {
+          importPromises.push(
+            import(`helium_modules/${moduleName}.js`)
+              .then(module => {
+                Object.keys(module).forEach(key => state[key] = module[key]);
+              })
+              .catch(error => {
+                console.error(`Failed to import module: ${moduleName}`, error.message);
+              })
+          );
+        });
       }
-    })
+    });
+  
+    if (importPromises.length > 0) await Promise.all(importPromises);
 
     heElements.forEach(el => {
       HELIUM.processed.add(el);
