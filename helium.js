@@ -197,7 +197,7 @@ async function processElements(element) {
       if (importAttr) {        
          importAttr.split(",").map(m => m.trim()).forEach(async moduleName => {
           try {
-            const module = await import(`./helium/${moduleName}.js`);
+            const module = await import(`helium/${moduleName}.js`);
             Object.keys(module).forEach(key => state[key] = module[key]);
           } catch (error) {
             console.error(`Failed to import module: ${moduleName}`, error.message);
