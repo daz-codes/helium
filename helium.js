@@ -8,11 +8,14 @@ let HELIUM = null;
 window.helium = function() {
   let initFn;
   const ALL = Symbol("all");
-  const he = (n,...a) => {
-  const prefix = n.split(/[.:]/)[0];
-  if (prefix === ":" || prefix === "") return false;
-  return a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${prefix}|`);
-};
+  const he = (n, ...a) => {
+    const prefix = n.split(/[.:]/)[0];
+    if (prefix === ":" || prefix === "") return false;
+    for (const attr of a) {
+      if (prefix === `@${attr}` || prefix === `data-he-${attr}`) return true;
+    }
+    return false;
+  };
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   
   // Initialize or reuse HELIUM object
@@ -354,8 +357,8 @@ const action = pairs.map(([, action]) => action);
   });
   HELIUM.observer.observe(root, { childList: true, subtree: true });
   
-  processElements(root);
-  for (const [key, items] of HELIUM.bindings.entries()) items.forEach(applyBinding);
+  const initialBindings = await processElements(root);
+  initialBindings.forEach(applyBinding);
   if(initFn) initFn($, state, {}, {}, html, get, post, put, patch, del, ...Object.values(state), ...[...HELIUM.refs.values()])
 }
 
