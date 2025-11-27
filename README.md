@@ -33,7 +33,6 @@ Just import from the CDN in a script tag directly in your HTML page:
 ```html
 <script type="module">
   import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js';
-  helium();
 </script>
 ```
 
@@ -47,7 +46,6 @@ Then include it in your JavaScript file and call the helium() function:
 
 ```javascript
 import helium from "@daz4126/helium"
-helium()
 ```
 
 ### Automatic Initialization
@@ -705,34 +703,16 @@ Object containing all elements marked with `@ref` (prefixed with `$`):
 <button @click="console.log($username.value)">Log Username</button>
 ```
 
-## Default Variables and Functions
+## Functions
 
-The helium function accepts a single JavaScript object as an argument. This can include default variable values and functions that can then be called inside the JavaScript expressions.
-
-### Setting Default Values
-
-The following will set the count variable to an initial value of 29 and the name variable to "Helium":
-
-```javascript
-helium({ 
-  count: 29, 
-  name: "Helium"
-})
-```
-
-These variables will be available in all Helium expressions:
-
-```html
-<p @text="count"></p> <!-- Shows: 29 -->
-<p @text="name"></p>  <!-- Shows: Helium -->
-```
+Functions can be imported using `@import` or defined using the `@data` attribute.
 
 ### Adding Functions
 
 You can add functions that can be called from event handlers and other expressions:
 
-```javascript
-helium({ 
+```html
+@data= "{ 
   appendTo(element) {
     const li = document.createElement("li")
     li.textContent = "New Item"
@@ -745,7 +725,7 @@ helium({
       currency: 'USD'
     }).format(amount)
   }
-})
+}"
 ```
 
 Using these functions:
@@ -765,12 +745,12 @@ Using these functions:
 
 ❌ **This won't work as expected:**
 
-```javascript
-helium({ 
+```html
+@data = "{ 
   increment(n = 1) {
     count += n  // 'count' is not defined in this scope
   }
-})
+}"
 ```
 
 ```html
@@ -780,12 +760,12 @@ helium({
 ✅ **Instead, pass variables as arguments:**
 
 **Option 1: Pass specific variables**
-```javascript
-helium({ 
+```html
+@data = "{ 
   increment(currentCount, n = 1) {
     return currentCount + n
   }
-})
+}"
 ```
 
 ```html
@@ -796,8 +776,8 @@ helium({
 
 This is the recommended approach when you need to update variables:
 
-```javascript
-helium({ 
+```html
+@data = "{ 
   increment(data, n = 1) {
     data.count += n  // Will trigger reactivity
   },
@@ -807,7 +787,7 @@ helium({
     data.name = ''
     data.items = []
   }
-})
+}"
 ```
 
 ```html
@@ -829,7 +809,6 @@ If you include [Idiomorph](https://github.com/bigskysoftware/idiomorph), Helium 
 <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>
 <script type="module">
   import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js';
-  helium();
 </script>
 ```
 
@@ -890,24 +869,6 @@ Helium automatically integrates with Turbo Drive:
 - Re-initializes after page loads (`turbo:render`)
 
 No additional configuration needed - just use Helium with Turbo normally.
-
-### Manual Cleanup
-
-If you need to manually clean up Helium (for example, when unmounting a section of your page):
-
-```javascript
-window.heliumTeardown()
-```
-
-This will:
-- Disconnect the MutationObserver
-- Remove all event listeners
-- Clear all internal state
-
-To reinitialize after teardown:
-```javascript
-helium()
-```
 
 ## Security Considerations
 
