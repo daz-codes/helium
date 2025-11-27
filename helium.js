@@ -347,12 +347,13 @@ const action = pairs.map(([, action]) => action);
   HELIUM.observer = new MutationObserver(async (ms) => {
     for (const m of ms) {
       m.removedNodes.forEach((n) => n.nodeType === 1 && cleanup(n));
-      m.addedNodes.forEach(async (n) => {
+      
+      for (const n of m.addedNodes) {
         if (n.nodeType === 1 && !HELIUM.processed.has(n)) {
           const bindings = await processElements(n);
           bindings?.forEach(applyBinding);
         }
-      });
+      }
     }
   });
   HELIUM.observer.observe(root, { childList: true, subtree: true });
