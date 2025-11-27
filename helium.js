@@ -107,7 +107,7 @@ const handler = {
   
 function applyBinding(b,e={},elCtx=b.el){
   const {el,prop,fn,calc}=b;
-  const r=fn($,state,e,elCtx,html,...Object.values(state),...[...HELIUM.refs.values()]);
+  const r=fn($,state,e,elCtx,html,get,post,put,patch,del);
   if (calc) state[calc] = r
   
   if (prop==="innerHTML") {
@@ -145,7 +145,7 @@ const compile = (expr, withReturn = false) => {
     HELIUM.fnCache.set(key, fn);
     return fn;
   } catch {
-    // ... fallback
+    return () => expr;
   }
 };
 
