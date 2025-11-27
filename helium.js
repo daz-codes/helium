@@ -6,7 +6,7 @@ const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...
 // Single global object to hold all settings
 let HELIUM = null;
 
-window.helium = function() {
+window.helium = async function() {
   let initFn;
   const ALL = Symbol("all");
   const HE_ATTR_REGEX = /^(@|:|data-he)/;
