@@ -200,8 +200,9 @@ async function processElements(element) {
       const importAttr = el.getAttribute("@import") || el.getAttribute("data-he-import");
       if (importAttr) {
         importAttr.split(",").map((m) => m.trim()).forEach((moduleName) => {
+            const path = "helium_modules/" + moduleName;
             importPromises.push(
-              import("helium_" + "modules/" + moduleName)
+              import(path)
                 .then((module) => {
                   Object.keys(module).forEach(
                     (key) => (state[key] = module[key]),
