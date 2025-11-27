@@ -201,8 +201,7 @@ async function processElements(element) {
       if (importAttr) {
         importAttr.split(",").map(m => m.trim()).forEach(moduleName => {
           importPromises.push(
-            const prefix = 'helium_' + 'modules/';
-            import(prefix + moduleName)
+            import(("helium_" + "modules/") + moduleName);
               .then(module => {
                 Object.keys(module).forEach(key => state[key] = module[key]);
               })
