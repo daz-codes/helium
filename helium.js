@@ -1,18 +1,23 @@
 const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
-const getEvent = el => ({form:"submit",input:"input",textarea:"input",select:"change"}[el.tagName.toLowerCase()]||"click")
+const INPUT_EVENTS = { form: "submit", input: "input", textarea:"input", select:"change" };
+const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
 
 // Single global object to hold all settings
 let HELIUM = null;
 
-window.helium = function() {
+window.helium = async function() {
   let initFn;
   const ALL = Symbol("all");
-  const he = (n,...a) => {
-  const prefix = n.split(/[.:]/)[0];
-  if (prefix === ":" || prefix === "") return false;
-  return a.map(b => `|@${b}|data-he-${b}|`).join``.includes(`|${prefix}|`);
-};
+  const HE_ATTR_REGEX = /^(@|:|data-he)/;
+  const he = (n, ...a) => {
+    const prefix = n.split(/[.:]/)[0];
+    if (prefix === ":" || prefix === "") return false;
+    for (const attr of a) {
+      if (prefix === `@${attr}` || prefix === `data-he-${attr}`) return true;
+    }
+    return false;
+  };
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
   
   // Initialize or reuse HELIUM object
@@ -66,7 +71,7 @@ fetch(url, {
                 type.includes("json")         ? res.json() :
                                                 res.text());
       }).then(data =>
-        data.turbo && "Turbo"
+        (data.turbo && window.Turbo)
           ? Turbo.renderStreamMessage(data.data)
           : update(data, options.target, options.loading ? options.action.map(a => a && "replace") : options.action, options.template)
       ).catch(e => console.error("AJAX:", e.message));
@@ -103,7 +108,7 @@ const handler = {
   
 function applyBinding(b,e={},elCtx=b.el){
   const {el,prop,fn,calc}=b;
-  const r=fn($,state,e,elCtx,html,...Object.values(state),...[...HELIUM.refs.values()]);
+  const r=fn($,state,e,elCtx,html,get,post,put,patch,del);
   if (calc) state[calc] = r
   
   if (prop==="innerHTML") {
@@ -117,7 +122,10 @@ function applyBinding(b,e={},elCtx=b.el){
       k.split(/\s+/).forEach(c => el.classList.toggle(c,v)));
 
   if (prop==="style" && r && typeof r==="object")
-  return el.style.cssText = Object.entries(r).map(([k,v])=>v?`${k}:${v}`:'').join(";");
+  return el.style.cssText = Object.entries(r)
+    .filter(([_, v]) => v != null && v !== false)
+    .map(([k, v]) => `${k}:${v}`)
+    .join("; ");
 
   if (prop in el) {
     if (el.type === "radio" && prop != "checked") el.checked = el.value===r;
@@ -134,7 +142,6 @@ const compile = (expr, withReturn = false) => {
   try {
     const fn = new Function(
       "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
-      ...Object.keys(state), ...[...HELIUM.refs.keys()],
       withReturn 
         ? `with($data){return(${expr.trim()})}` 
         : `with($data){${expr.trim()}}`
@@ -142,17 +149,7 @@ const compile = (expr, withReturn = false) => {
     HELIUM.fnCache.set(key, fn);
     return fn;
   } catch {
-    try {
-      const fn = new Function(
-        "$","$data","$event","$el","$html","$get","$post","$put","$patch","$delete",
-        ...Object.keys(state), ...[...HELIUM.refs.keys()],
-        `with($data){${expr.trim()}}`
-      );
-      HELIUM.fnCache.set(key, fn);
-      return fn;
-    } catch {
-      return () => expr;
-    }
+    return () => expr;
   }
 };
 
@@ -173,7 +170,7 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
   return excludeChanged ? [...accessed.keys()].filter(prop => state[prop] === accessed.get(prop)) : [...accessed];
 };
 
-  const cleanup = el => {
+const cleanup = el => {
     [el,...el.querySelectorAll('*')].forEach(e => {
       HELIUM.listeners.get(e)?.forEach(({receiver,event,handler}) => receiver.removeEventListener(event,handler));
       HELIUM.listeners.delete(e);
@@ -184,33 +181,45 @@ async function processElements(element) {
     const newBindings = [];
     const deferredBindings = [];
 
-    const heElements = [element, ...element.querySelectorAll("*")]
-      .filter(e => !HELIUM.processed.has(e) && [...e.attributes].some(a => /^(@|:|data-he)/.test(a.name)));
+   const heElements = [element, ...element.querySelectorAll("*")].filter(e => {
+      if (HELIUM.processed.has(e)) return false;
+      for (let i = 0; i < e.attributes.length; i++) {
+        if (HE_ATTR_REGEX.test(e.attributes[i].name)) return true;
+      }
+      return false;
+    });
 
     const addBinding = (val, b) => {
       HELIUM.bindings.set(val, b.calc ? [b,...(HELIUM.bindings.get(val) || [])] : [...(HELIUM.bindings.get(val) || []), b]);
       b.calc ? newBindings.unshift(b) : newBindings.push(b);
     };
   
-  heElements.forEach(async el => {
+    const importPromises = [];
+  
+    heElements.forEach(el => {
       const importAttr = el.getAttribute("@import") || el.getAttribute("data-he-import");
-      if (importAttr) {        
-         importAttr.split(",").map(m => m.trim()).forEach(async moduleName => {
-          try {
-            const module = await import(`helium_modules/${moduleName}.js`);
-            Object.keys(module).forEach(key => state[key] = module[key]);
-          } catch (error) {
-            console.error(`Failed to import module: ${moduleName}`, error.message);
-          }
-        })
+      if (importAttr) {
+        importAttr.split(",").map(m => m.trim()).forEach(moduleName => {
+          importPromises.push(
+            import(`helium_modules/${moduleName}`)
+              .then(module => {
+                Object.keys(module).forEach(key => state[key] = module[key]);
+              })
+              .catch(error => {
+                console.error(`Failed to import module: ${moduleName}`, error.message);
+              })
+          );
+        });
       }
-    })
+    });
+  
+    if (importPromises.length > 0) await Promise.all(importPromises);
 
     heElements.forEach(el => {
       HELIUM.processed.add(el);
       
       const attrs = el.attributes;
-      const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del, ...Object.values(state), ...[...HELIUM.refs.values()]);
+      const execFn = v => compile(v, true)($, state, {}, el, html, get, post, put, patch, del);
       const inputType = el.type?.toLowerCase();
       const isCheckbox = inputType == "checkbox", isRadio = inputType == "radio", isSelect = el.tagName == "SELECT";
 
@@ -230,7 +239,7 @@ async function processElements(element) {
         }
 
         // Process the attribute
-        if (["@data", "data-he"].includes(name)) {
+        if (name === "@data" || name === "data-he") {
           Object.assign(state, parseEx(value));
         }
         else if (name.startsWith(":") || name.startsWith("data-he-attr:")) {
@@ -275,7 +284,7 @@ async function processElements(element) {
           const debounceMod = mods.find(m => m.startsWith("debounce"));
           const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
           const _handler = e => {
-    const exFn = v => compile(v,true)($, state, e, el, html, get, post, put, patch, del, ...Object.values(state), ...[...HELIUM.refs.values()])
+    const exFn = v => compile(v,true)($, state, e, el, html, get, post, put, patch, del)
             if (mods.includes("prevent")) e.preventDefault();
             const keyMods = {shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey"};
             for (const [mod, prop] of Object.entries(keyMods)) if (mods.includes(mod) && !e[prop]) return;
@@ -329,17 +338,23 @@ const action = pairs.map(([, action]) => action);
   }
   
   // Create new observer
-  HELIUM.observer = new MutationObserver(ms => {
+  HELIUM.observer = new MutationObserver(async (ms) => {
     for (const m of ms) {
-      m.removedNodes.forEach(n => n.nodeType === 1 && cleanup(n));
-      m.addedNodes.forEach(n => n.nodeType === 1 && !HELIUM.processed.has(n) && processElements(n).forEach(applyBinding));
+      m.removedNodes.forEach((n) => n.nodeType === 1 && cleanup(n));
+      
+      for (const n of m.addedNodes) {
+        if (n.nodeType === 1 && !HELIUM.processed.has(n)) {
+          const bindings = await processElements(n);
+          bindings?.forEach(applyBinding);
+        }
+      }
     }
   });
   HELIUM.observer.observe(root, { childList: true, subtree: true });
   
-  processElements(root);
-  for (const [key, items] of HELIUM.bindings.entries()) items.forEach(applyBinding);
-  if(initFn) initFn($, state, {}, {}, html, get, post, put, patch, del, ...Object.values(state), ...[...HELIUM.refs.values()])
+  const initialBindings = await processElements(root);
+  initialBindings.forEach(applyBinding);
+  if(initFn) initFn($, state, {}, {}, html, get, post, put, patch, del)
 }
 
 window.heliumTeardown = function() {
