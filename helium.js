@@ -1,5 +1,6 @@
 const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
-const getEvent = el => ({form:"submit",input:"input",textarea:"input",select:"change"}[el.tagName.toLowerCase()]||"click")
+const INPUT_EVENTS = { form: "submit", input: "input", textarea:"input", select:"change" };
+const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
 
 // Single global object to hold all settings
@@ -70,7 +71,7 @@ fetch(url, {
                 type.includes("json")         ? res.json() :
                                                 res.text());
       }).then(data =>
-        data.turbo && "Turbo"
+        (data.turbo && window.Turbo)
           ? Turbo.renderStreamMessage(data.data)
           : update(data, options.target, options.loading ? options.action.map(a => a && "replace") : options.action, options.template)
       ).catch(e => console.error("AJAX:", e.message));
@@ -121,7 +122,10 @@ function applyBinding(b,e={},elCtx=b.el){
       k.split(/\s+/).forEach(c => el.classList.toggle(c,v)));
 
   if (prop==="style" && r && typeof r==="object")
-  return el.style.cssText = Object.entries(r).map(([k,v])=>v?`${k}:${v}`:'').join(";");
+  return el.style.cssText = Object.entries(r)
+    .filter(([_, v]) => v != null && v !== false)
+    .map(([k, v]) => `${k}:${v}`)
+    .join("; ");
 
   if (prop in el) {
     if (el.type === "radio" && prop != "checked") el.checked = el.value===r;
@@ -241,7 +245,7 @@ async function processElements(element) {
         }
 
         // Process the attribute
-        if (["@data", "data-he"].includes(name)) {
+        if (name === "@data" || name === "data-he") {
           Object.assign(state, parseEx(value));
         }
         else if (name.startsWith(":") || name.startsWith("data-he-attr:")) {
