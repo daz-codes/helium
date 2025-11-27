@@ -171,17 +171,11 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
 };
 
 const cleanup = el => {
-  const elementsToClean = [el, ...el.querySelectorAll('*')];
-  for (const e of elementsToClean) {
-    const listeners = HELIUM.listeners.get(e);
-    if (listeners) {
-      for (const {receiver, event, handler} of listeners) {
-        receiver.removeEventListener(event, handler);
-      }
+    [el,...el.querySelectorAll('*')].forEach(e => {
+      HELIUM.listeners.get(e)?.forEach(({receiver,event,handler}) => receiver.removeEventListener(event,handler));
       HELIUM.listeners.delete(e);
-    }
-  }
-};
+    });
+  };
 
 async function processElements(element) {
     const newBindings = [];
