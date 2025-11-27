@@ -34,7 +34,7 @@ window.helium = function() {
 
   const update = (data,targets,actions,template) => {
     const newTargets = [];
-    targets?.forEach((target,i) => {
+    targets.forEach((target,i) => {
     const element = target instanceof Node ? target : (HELIUM.refs.get(target.trim()) || $(target.trim()));
       if(element){
         const content = template ? template(data) : data;
@@ -46,7 +46,7 @@ window.helium = function() {
   }  
   
 const ajax = (url,method,options={},params={}) => {
-    if(options.loading && options.target) options.target = update(options.loading,options.target,options.action) || options.target;
+    if(options.loading) options.target = update(options.loading,options.target,options.action) || options.target;
     const fd = params instanceof FormData, token = document.querySelector('meta[name="csrf-token"]')?.content;
     const path = new URL(url, window.location.href);
     const sameOrigin = path.origin === window.location.origin;
@@ -180,7 +180,7 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
     });
   };
 
-function processElements(element) {
+async function processElements(element) {
     const newBindings = [];
     const deferredBindings = [];
 
@@ -191,6 +191,20 @@ function processElements(element) {
       HELIUM.bindings.set(val, b.calc ? [b,...(HELIUM.bindings.get(val) || [])] : [...(HELIUM.bindings.get(val) || []), b]);
       b.calc ? newBindings.unshift(b) : newBindings.push(b);
     };
+  
+  heElements.forEach(async el => {
+      const importAttr = el.getAttribute("@import") || el.getAttribute("data-he-import");
+      if (importAttr) {        
+         importAttr.split(",").map(m => m.trim()).forEach(async moduleName => {
+          try {
+            const module = await import(`helium_modules/${moduleName}.js`);
+            Object.keys(module).forEach(key => state[key] = module[key]);
+          } catch (error) {
+            console.error(`Failed to import module: ${moduleName}`, error.message);
+          }
+        })
+      }
+    })
 
     heElements.forEach(el => {
       HELIUM.processed.add(el);
@@ -249,9 +263,6 @@ function processElements(element) {
         else if (he(name, "effect")) {
           deferredBindings.push({el, prop: null, fn: compile(value, true), keys: name.split(":").slice(1)});
         }
-        else if (he(name, "import")) {
-          value.split(",").map(s => s.trim()).forEach(v => state[v] = window[v]);
-        }
         else if (he(name, "init")) {
           initFn = compile(value, true);
         }
@@ -278,9 +289,9 @@ function processElements(element) {
             if (!mods.includes("outside") || !el.contains(e.target)) {
               if (isHttpMethod) {
                 const getAttr = name => el.getAttribute(`data-he-${name}`) || el.getAttribute(`@${name}`);
-                const pairs = getAttr('target')?.split(",")?.map(p => p.split(":").map(s => s.trim()));
-const target = pairs?.map(([target]) => target);
-const action = pairs?.map(([, action]) => action);
+                const pairs = (getAttr('target') || "").split(",").map(p => p.split(":").map(s => s.trim()));
+const target = pairs.map(([target]) => target);
+const action = pairs.map(([, action]) => action);
                 const options = {
                   ...(getAttr("options") && parseEx(getAttr("options") || "{}")),
                   ...(target && { target }),
