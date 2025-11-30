@@ -43,8 +43,9 @@ window.helium = async function() {
     const element = target instanceof Node ? target : (HELIUM.refs.get(target.trim()) || $(target.trim()));
       if(element){
         const content = template ? template(data) : data;
-        actions[i] ? element[actions[i]=="replace"?"replaceWith":actions[i]](html(content)) : element.innerHTML = content;
-        newTargets.push(actions[i] ? content : element)
+        const htmlContent = html(content)
+        actions[i] ? element[actions[i]=="replace"?"replaceWith":actions[i]](htmlContent) : element.innerHTML = content;
+        newTargets.push(actions[i] ? htmlContent : element)
       } else state[target] = data
     })
     return newTargets
