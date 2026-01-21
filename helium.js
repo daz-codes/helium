@@ -1,4 +1,5 @@
 const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
+const tryNum=v=>{const t=String(v).trim(),n=+t;return t&&!isNaN(n)?n:v}
 const isValidIdentifier = v => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(v);
 const RESERVED = new Set(['undefined', 'null', 'true', 'false', 'NaN', 'Infinity', 'this', 'arguments']);
 const INPUT_EVENTS = { form: "submit", input: "input", textarea:"input", select:"change" };
@@ -245,7 +246,7 @@ async function processElements(element) {
 
         // Initialize state first if needed (skip reserved words, only if not already set)
         if (he(name, "text", "html", "bind") && isValidIdentifier(value) && !RESERVED.has(value) && !(value in state)) {
-          state[value] = he(name, "bind") ? (el.type == "checkbox" ? el.checked : el.value) : el.textContent;
+          state[value] = he(name, "bind") ? (el.type == "checkbox" ? el.checked : tryNum(el.value)) : tryNum(el.textContent);
         }
 
         // Process the attribute

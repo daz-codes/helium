@@ -3,7 +3,7 @@
  * A variant of Helium that works without unsafe-eval
  */
 
-import { parse, EvalAstFactory } from 'jexpr';
+import { parse, EvalAstFactory } from './jexpr.js';
 
 const astFactory = new EvalAstFactory();
 
@@ -264,6 +264,12 @@ async function hydrogen(initialState = {}) {
         }
         // @text - text binding
         else if (heMatch(name, "text")) {
+          // Initialize from DOM content if simple variable doesn't exist
+          if (/^\w+$/.test(value) && !(value in state)) {
+            const text = el.textContent.trim();
+            const num = Number(text);
+            state[value] = isNaN(num) ? text : num;
+          }
           const b = { el, prop: "textContent", expr: value };
           trackAndBind(b, value);
         }

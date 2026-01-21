@@ -29,8 +29,5 @@
   "devDependencies": {
     "jsdom": "^27.0.1",
     "vitest": "^3.2.4"
-  },
-  "dependencies": {
-    "jexpr": "^1.0.0-pre.9"
   }
 }
