@@ -263,33 +263,40 @@ Runs a side effect whenever specified dependencies change. Use `:*` to run on an
 
 ### @import
 
-Imports global functions or variables from the `window` object into Helium's scope, making them available in Helium expressions.
+Imports ES modules from the `helium_modules/` directory into Helium's scope, making their exports available in Helium expressions.
 
 ```html
-<div @import="myFunction,myVariable">
-  <button @click="myFunction()">Call Imported Function</button>
-  <p @text="myVariable"></p>
+<div @import="utils,api">
+  <button @click="formatDate(new Date())">Format Date</button>
+  <p @text="API_VERSION"></p>
 </div>
 ```
 
-This is useful when you have existing global functions and want to use them with Helium without passing them through the `helium()` initialization.
+This dynamically imports modules and adds all their exports to Helium's state. Modules should be placed in a `helium_modules/` directory relative to your HTML file.
 
 **Example:**
-```html
-<script>
-  function greet(name) {
-    alert(`Hello, ${name}!`);
-  }
-  
-  window.appConfig = {
-    version: '1.0.0',
-    apiUrl: 'https://api.example.com'
-  };
-</script>
 
-<div @import="greet,appConfig">
-  <button @click="greet('World')">Greet</button>
-  <p @text="appConfig.version"></p>
+```javascript
+// helium_modules/utils.js
+export function formatDate(date) {
+  return date.toLocaleDateString();
+}
+
+export function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+```
+
+```javascript
+// helium_modules/api.js
+export const API_VERSION = '1.0.0';
+export const API_URL = 'https://api.example.com';
+```
+
+```html
+<div @import="utils,api">
+  <button @click="alert(capitalize('hello'))">Capitalize</button>
+  <p @text="API_VERSION"></p>
 </div>
 ```
 

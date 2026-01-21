@@ -1,4 +1,6 @@
 const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
+const isValidIdentifier = v => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(v);
+const RESERVED = new Set(['undefined', 'null', 'true', 'false', 'NaN', 'Infinity', 'this', 'arguments']);
 const INPUT_EVENTS = { form: "submit", input: "input", textarea:"input", select:"change" };
 const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
@@ -6,8 +8,8 @@ const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...
 // Single global object to hold all settings
 let HELIUM = null;
 
-window.helium = async function() {
-  let initFn;
+async function helium(initialState = {}) {
+  let initFn, initEl;
   const ALL = Symbol("all");
   const HE_ATTR_REGEX = /^(@|:|data-he)/;
   const he = (n, ...a) => {
@@ -19,7 +21,7 @@ window.helium = async function() {
     return false;
   };
   const root = document.querySelector("[\\@helium]") || document.querySelector("[data-helium]") || document.body;
-  
+
   // Initialize or reuse HELIUM object
   if (!HELIUM) {
     HELIUM = {
@@ -33,7 +35,7 @@ window.helium = async function() {
       proxyCache: new WeakMap()
     };
   }
-  
+
   const $ = s => document.querySelector(s);
   const html = s => Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild
 
@@ -74,12 +76,12 @@ fetch(url, {
       }).then(data =>
         (data.turbo && window.Turbo)
           ? Turbo.renderStreamMessage(data.data)
-          : update(data, options.target, options.loading ? options.action.map(a => a && "replace") : options.action, options.template)
+          : update(data, options.target, options.loading ? (options.action || []).map(a => a && "replace") : options.action, options.template)
       ).catch(e => console.error("AJAX:", e.message));
   }
 
-  const get = (url,target) => ajax(url,"GET",target);
-  const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(method => (url, params, options) => ajax(url, method, options, params));
+  const get = (url, options={}) => ajax(url, "GET", typeof options === "string" ? { target: [options], action: [null] } : options);
+  const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(method => (url, params, options={}) => ajax(url, method, typeof options === "string" ? { target: [options], action: [null] } : options, params));
   
 const handler = {
     get(t,p,r) {
@@ -94,18 +96,22 @@ const handler = {
     return v;
   },
     set: (t,p,v) => {
-      const res = Reflect.set(t,p,v);    
+      const res = Reflect.set(t,p,v);
       if (Array.isArray(t) && !isNaN(p)) {
         const parentKey = HELIUM.parentKeys.get(t);
         if (parentKey) HELIUM.bindings.get(parentKey)?.forEach(applyBinding);
-      }   
-      HELIUM.bindings.get(p)?.concat(...(HELIUM.bindings.get(ALL) ?? []))?.forEach(applyBinding); 
+      }
+      HELIUM.bindings.get(p)?.forEach(applyBinding);
+      HELIUM.bindings.get(ALL)?.forEach(applyBinding);
       return res
     }
 };
 
   // Initialize state if it doesn't exist
   const state = new Proxy({}, handler);
+
+  // Merge initial state
+  Object.assign(state, initialState);
   
 function applyBinding(b,e={},elCtx=b.el){
   const {el,prop,fn,calc}=b;
@@ -130,7 +136,7 @@ function applyBinding(b,e={},elCtx=b.el){
 
   if (prop in el) {
     if (el.type === "radio" && prop != "checked") el.checked = el.value===r;
-    else el[prop] = prop==="textContent"?r:parseEx(r);
+    else el[prop] = prop==="textContent" ? (r == null ? String(r) : r) : parseEx(r);
     return;
   }
 
@@ -165,9 +171,9 @@ const trackDependencies = (fn, el, excludeChanged = false) => {
       return typeof val == "object" && val != null ? new Proxy(val, this) : val;
     }
   });
-  
-  try { fn.call(null, $, trackProxy, HELIUM.refs); } catch {}
-  
+
+  try { fn.call(null, $, trackProxy, {}, el, html, get, post, put, patch, del); } catch {}
+
   return excludeChanged ? [...accessed.keys()].filter(prop => state[prop] === accessed.get(prop)) : [...accessed];
 };
 
@@ -237,12 +243,9 @@ async function processElements(element) {
         // Skip non-helium attributes early
         if (!name.startsWith('@') && !name.startsWith(':') && !name.startsWith('data-he')) continue;
 
-        // Initialize state first if needed
-        if (he(name, "text", "html", "bind")) {
-          try {
-            new Function(`let ${value}=1`);
-            state[value] ??= he(name, "bind") ? (el.type == "checkbox" ? el.checked : el.value) : el.textContent;
-          } catch {}
+        // Initialize state first if needed (skip reserved words, only if not already set)
+        if (he(name, "text", "html", "bind") && isValidIdentifier(value) && !RESERVED.has(value) && !(value in state)) {
+          state[value] = he(name, "bind") ? (el.type == "checkbox" ? el.checked : el.value) : el.textContent;
         }
 
         // Process the attribute
@@ -281,6 +284,7 @@ async function processElements(element) {
         }
         else if (he(name, "init")) {
           initFn = compile(value, true);
+          initEl = el;
         }
         else if (name.startsWith("@") || name.startsWith("data-he")) {
           const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
@@ -344,7 +348,8 @@ const action = pairs.map(([, action]) => action);
     return newBindings;
   }
   
-  // Create new observer
+  // Disconnect old observer if exists, then create new one
+  HELIUM.observer?.disconnect();
   HELIUM.observer = new MutationObserver(async (ms) => {
     for (const m of ms) {
       m.removedNodes.forEach((n) => n.nodeType === 1 && cleanup(n));
@@ -361,8 +366,12 @@ const action = pairs.map(([, action]) => action);
   
   const initialBindings = await processElements(root);
   initialBindings.forEach(applyBinding);
-  if(initFn) initFn($, state, {}, {}, html, get, post, put, patch, del)
+  if(initFn) initFn($, state, {}, initEl, html, get, post, put, patch, del)
+
+  return state;
 }
+
+window.helium = helium;
 
 window.heliumTeardown = function() {
   if (HELIUM?.observer) HELIUM.observer.disconnect();
@@ -374,3 +383,5 @@ document.addEventListener("DOMContentLoaded",_ => helium());
 // Turbo integration
 document.addEventListener("turbo:before-render",_ => window.heliumTeardown());
 document.addEventListener("turbo:render",_ => helium());
+
+export default helium;

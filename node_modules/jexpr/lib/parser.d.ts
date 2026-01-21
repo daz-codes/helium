@@ -1,0 +1,32 @@
+import { Expression } from './ast.js';
+import { AstFactory } from './ast_factory.js';
+import { Kind } from './tokenizer.js';
+export declare const parse: <E extends Expression>(expr: string, astFactory: AstFactory<E>) => E | undefined;
+export declare class Parser<N extends Expression> {
+    private _kind?;
+    private _tokenizer;
+    private _ast;
+    private _token?;
+    private _value?;
+    constructor(input: string, astFactory: AstFactory<N>);
+    parse(): N | undefined;
+    private _advance;
+    _matches(kind?: Kind, value?: string): boolean;
+    private _parseExpression;
+    private _parsePrecedence;
+    private _makeInvokeOrGetter;
+    private _parseBinary;
+    private _parseUnary;
+    private _parseTernary;
+    private _parsePrimary;
+    private _parseList;
+    private _parseMap;
+    private _parseInvokeOrIdentifier;
+    private _parseIdentifier;
+    private _parseArguments;
+    private _parseIndex;
+    private _parseParenOrFunction;
+    private _parseString;
+    private _parseInteger;
+    private _parseDecimal;
+}

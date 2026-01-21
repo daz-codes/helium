@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hydrogen Demo - CSP-Safe Reactive Library</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    .card { border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; border-radius: 8px; }
+    button { padding: 0.5rem 1rem; margin: 0.25rem; cursor: pointer; }
+    input { padding: 0.5rem; margin: 0.25rem; }
+    .danger { color: red; }
+    .success { color: green; }
+    h2 { margin-top: 2rem; }
+  </style>
+</head>
+<body data-helium>
+  <h1>Hydrogen Demo</h1>
+  <p>CSP-safe reactive library (no <code>unsafe-eval</code> required)</p>
+
+  <!-- Counter Example -->
+  <div class="card" @data="{ count: 0 }">
+    <h2>Counter</h2>
+    <p>Count: <strong @text="count">0</strong></p>
+    <button @click="count++">Increment (count++)</button>
+    <button @click="count--">Decrement (count--)</button>
+    <button @click="count = 0">Reset</button>
+    <p :class="count > 5 ? 'danger' : 'success'">
+      Status: <span @text="count > 5 ? 'Too high!' : 'Looking good'"></span>
+    </p>
+  </div>
+
+  <!-- Two-way Binding Example -->
+  <div class="card" @data="{ name: '', email: '' }">
+    <h2>Two-way Binding</h2>
+    <input @bind="name" placeholder="Your name">
+    <input @bind="email" placeholder="Your email">
+    <p @hidden="!name">Hello, <strong @text="name"></strong>!</p>
+    <p @hidden="!email">Email: <span @text="email"></span></p>
+  </div>
+
+  <!-- Conditional Display -->
+  <div class="card" @data="{ showSecret: false }">
+    <h2>Conditional Display</h2>
+    <button @click="showSecret = !showSecret">
+      <span @text="showSecret ? 'Hide' : 'Show'"></span> Secret
+    </button>
+    <p @hidden="!showSecret" style="background: #fef3c7; padding: 0.5rem;">
+      The secret message is revealed!
+    </p>
+  </div>
+
+  <!-- Keyboard Events -->
+  <div class="card" @data="{ lastKey: 'none' }">
+    <h2>Keyboard Events</h2>
+    <input
+      @keydown="lastKey = $event.key"
+      @keydown.enter="alert('Enter pressed!')"
+      placeholder="Type here...">
+    <p>Last key pressed: <code @text="lastKey"></code></p>
+  </div>
+
+  <!-- Refs Example -->
+  <div class="card">
+    <h2>Element References</h2>
+    <input @ref="myInput" placeholder="Input with ref">
+    <button @click="$myInput.focus()">Focus Input</button>
+    <button @click="$myInput.value = 'Hello!'">Set Value</button>
+  </div>
+
+  <!-- Computed Values -->
+  <div class="card" @data="{ price: 10, quantity: 1 }">
+    <h2>Computed Values</h2>
+    <label>Price: $<input type="number" @bind="price" style="width: 60px"></label>
+    <label>Qty: <input type="number" @bind="quantity" style="width: 60px"></label>
+    <p>Total: $<strong @text="price * quantity"></strong></p>
+  </div>
+
+  <script type="module">
+    import hydrogen from './hydrogen.js';
+
+    // Initialize with optional global state/functions
+    hydrogen({
+      alert: (msg) => window.alert(msg)
+    });
+
+    console.log('Hydrogen loaded - CSP-safe reactive library');
+  </script>
+</body>
+</html>

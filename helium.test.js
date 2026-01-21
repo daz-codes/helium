@@ -15,9 +15,9 @@ describe('Helium Reactive Library', () => {
   });
 
   describe('State Reactivity', () => {
-    it('should initialize with default data', () => {
+    it('should initialize with default data', async () => {
       container.innerHTML = '<div @text="count"></div>';
-      helium({ count: 5 });
+      await helium({ count: 5 });
       expect(container.querySelector('div').textContent).toBe('5');
     });
 
@@ -88,27 +88,27 @@ describe('Helium Reactive Library', () => {
   });
 
   describe('Directives - @text and @html', () => {
-    it('should bind text content with @text', () => {
+    it('should bind text content with @text', async () => {
       container.innerHTML = '<div @text="message"></div>';
-      helium({ message: 'Hello World' });
+      await helium({ message: 'Hello World' });
       expect(container.querySelector('div').textContent).toBe('Hello World');
     });
 
-    it('should bind HTML content with @html', () => {
+    it('should bind HTML content with @html', async () => {
       container.innerHTML = '<div @html="content"></div>';
-      helium({ content: '<strong>Bold</strong>' });
+      await helium({ content: '<strong>Bold</strong>' });
       expect(container.querySelector('div').innerHTML).toBe('<strong>Bold</strong>');
     });
 
-    it('should work with data-he-text prefix', () => {
+    it('should work with data-he-text prefix', async () => {
       container.innerHTML = '<div data-he-text="message"></div>';
-      helium({ message: 'Test' });
+      await helium({ message: 'Test' });
       expect(container.querySelector('div').textContent).toBe('Test');
     });
 
-    it('should evaluate expressions in @text', () => {
+    it('should evaluate expressions in @text', async () => {
       container.innerHTML = '<div @text="count * 2"></div>';
-      helium({ count: 5 });
+      await helium({ count: 5 });
       expect(container.querySelector('div').textContent).toBe('10');
     });
   });
@@ -138,35 +138,35 @@ describe('Helium Reactive Library', () => {
   });
 
   describe('Directives - @hidden and @visible', () => {
-    it('should hide element with @hidden when true', () => {
+    it('should hide element with @hidden when true', async () => {
       container.innerHTML = '<div @hidden="isHidden"></div>';
-      helium({ isHidden: true });
+      await helium({ isHidden: true });
       expect(container.querySelector('div').hidden).toBe(true);
     });
 
-    it('should show element with @hidden when false', () => {
+    it('should show element with @hidden when false', async () => {
       container.innerHTML = '<div @hidden="isHidden"></div>';
-      helium({ isHidden: false });
+      await helium({ isHidden: false });
       expect(container.querySelector('div').hidden).toBe(false);
     });
 
-    it('should show element with @visible when true', () => {
+    it('should show element with @visible when true', async () => {
       container.innerHTML = '<div @visible="isVisible"></div>';
-      helium({ isVisible: true });
+      await helium({ isVisible: true });
       expect(container.querySelector('div').hidden).toBe(false);
     });
 
-    it('should hide element with @visible when false', () => {
+    it('should hide element with @visible when false', async () => {
       container.innerHTML = '<div @visible="isVisible"></div>';
-      helium({ isVisible: false });
+      await helium({ isVisible: false });
       expect(container.querySelector('div').hidden).toBe(true);
     });
   });
 
   describe('Directives - Dynamic Attributes (:attr)', () => {
-    it('should bind attribute dynamically', () => {
+    it('should bind attribute dynamically', async () => {
       container.innerHTML = '<div :class="className"></div>';
-      helium({ className: 'active' });
+      await helium({ className: 'active' });
       expect(container.querySelector('div').getAttribute('class')).toBe('active');
     });
 
@@ -218,21 +218,19 @@ describe('Helium Reactive Library', () => {
       }, 0);
     });
 
-    it('should handle debounced events', (done) => {
+    it('should handle debounced events', async () => {
       container.innerHTML = '<input @input.debounce:100="value = $event.target.value" />';
-      const state = helium({ value: '' });
+      const state = await helium({ value: '' });
       const input = container.querySelector('input');
-      
+
       input.value = 'test';
       input.dispatchEvent(new Event('input'));
-      
+
       // Should not update immediately
       expect(state.value).toBe('');
-      
-      setTimeout(() => {
-        expect(state.value).toBe('test');
-        done();
-      }, 150);
+
+      await new Promise(resolve => setTimeout(resolve, 150));
+      expect(state.value).toBe('test');
     });
 
     it('should handle once modifier', () => {
@@ -263,17 +261,17 @@ describe('Helium Reactive Library', () => {
   });
 
   describe('@init Directive', () => {
-    it('should execute code on initialization', () => {
+    it('should execute code on initialization', async () => {
       container.innerHTML = '<div @init="initialized = true"></div>';
-      const state = helium({ initialized: false });
+      const state = await helium({ initialized: false });
       expect(state.initialized).toBe(true);
     });
   });
 
   describe('@data Directive', () => {
-    it('should merge data into state', () => {
+    it('should merge data into state', async () => {
       container.innerHTML = '<div @data="{ user: \'Alice\', age: 30 }"></div><span @text="user"></span>';
-      helium({});
+      await helium({});
       expect(container.querySelector('span').textContent).toBe('Alice');
     });
   });
@@ -289,9 +287,9 @@ describe('Helium Reactive Library', () => {
       }, 0);
     });
 
-    it('should provide $html helper to create elements', () => {
+    it('should provide $html helper to create elements', async () => {
       container.innerHTML = '<div @init="$el.appendChild($html(\'<span>Test</span>\'))"></div>';
-      helium({});
+      await helium({});
       expect(container.querySelector('span').textContent).toBe('Test');
     });
   });
@@ -367,15 +365,15 @@ describe('Helium Reactive Library', () => {
   });
 
   describe('Edge Cases', () => {
-    it('should handle undefined state values', () => {
+    it('should handle undefined state values', async () => {
       container.innerHTML = '<div @text="undefined"></div>';
-      helium({});
+      await helium({});
       expect(container.querySelector('div').textContent).toBe('undefined');
     });
 
-    it('should handle null state values', () => {
+    it('should handle null state values', async () => {
       container.innerHTML = '<div @text="value"></div>';
-      helium({ value: null });
+      await helium({ value: null });
       expect(container.querySelector('div').textContent).toBe('null');
     });
 
