@@ -1,4 +1,5 @@
 const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}}
+const tryNum=v=>{const t=String(v).trim(),n=+t;return t&&!isNaN(n)?n:v}
 const INPUT_EVENTS = { form: "submit", input: "input", textarea:"input", select:"change" };
 const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
@@ -241,7 +242,7 @@ async function processElements(element) {
         if (he(name, "text", "html", "bind")) {
           try {
             new Function(`let ${value}=1`);
-            state[value] ??= he(name, "bind") ? (el.type == "checkbox" ? el.checked : el.value) : el.textContent;
+            state[value] ??= he(name, "bind") ? (el.type == "checkbox" ? el.checked : tryNum(el.value)) : tryNum(el.textContent);
           } catch {}
         }
 
