@@ -6,8 +6,18 @@
 import { parse, EvalAstFactory } from './jexpr.js';
 
 const astFactory = new EvalAstFactory();
-const tryNum = v => { const t = String(v).trim(), n = +t; return t && !isNaN(n) ? n : v; };
+const parseEx = v => {
+  if (typeof v !== 'string') return v;
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  if (v === 'null') return null;
+  if (v === 'undefined') return undefined;
+  const n = +v;
+  return !isNaN(n) && v.trim() !== '' ? n : v;
+};
 const debounce = (f, d) => { let t; return (...a) => (clearTimeout(t), t = setTimeout(f, d, ...a)); };
+const isValidIdentifier = v => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(v);
+const RESERVED = new Set(['undefined', 'null', 'true', 'false', 'NaN', 'Infinity', 'this', 'arguments']);
 const INPUT_EVENTS = { form: "submit", input: "input", textarea: "input", select: "change" };
 const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
 
@@ -206,7 +216,10 @@ async function xenon(initialState = {}) {
     if (prop === "textContent") {
       el.textContent = result == null ? String(result) : result;
     } else if (prop === "innerHTML") {
-      el.innerHTML = Array.isArray(result) ? result.join('') : result;
+      const content = Array.isArray(result) ? result.join('') : result;
+      typeof Idiomorph === "object"
+        ? Idiomorph.morph(el, content, { morphStyle: 'innerHTML' })
+        : el.innerHTML = content;
     } else if (prop === "hidden") {
       // @hidden="x" -> hide when x is truthy
       // @visible="x" -> hide when x is falsy (invert)
@@ -225,9 +238,14 @@ async function xenon(initialState = {}) {
       // @effect - just evaluate, no DOM update
       return;
     } else if (prop in el) {
-      el[prop] = result;
+      // Radio buttons: sync checked state based on value match
+      if (b.isRadio && prop !== "checked") {
+        el.checked = el.value == result;
+      } else {
+        el[prop] = parseEx(result);
+      }
     } else {
-      el.setAttribute(prop, result);
+      el.setAttribute(prop, parseEx(result));
     }
   }
 
@@ -237,6 +255,9 @@ async function xenon(initialState = {}) {
     const prefix = name.split(/[.:]/)[0];
     return attrs.some(a => prefix === `@${a}` || prefix === `data-xe-${a}`);
   };
+
+  // Deferred init (runs after all bindings are set up)
+  let initFn, initEl;
 
   async function processElements(root) {
     const elements = [root, ...root.querySelectorAll("*")].filter(el => {
@@ -279,18 +300,23 @@ async function xenon(initialState = {}) {
         // @ref - element reference
         else if (xeMatch(name, "ref")) {
           XENON.refs.set("$" + value, el);
+          state["$" + value] = el;  // Also add to state so expressions can access it
         }
         // @text - text binding
         else if (xeMatch(name, "text")) {
-          // Initialize from DOM content if simple variable doesn't exist
-          if (/^\w+$/.test(value) && !(value in state)) {
-            state[value] = tryNum(el.textContent);
+          // Initialize from DOM content if valid identifier and not reserved
+          if (isValidIdentifier(value) && !RESERVED.has(value) && !(value in state)) {
+            state[value] = parseEx(el.textContent);
           }
           const b = { el, prop: "textContent", expr: value };
           trackAndBind(b, value);
         }
         // @html - html binding
         else if (xeMatch(name, "html")) {
+          // Initialize from DOM content if valid identifier and not reserved
+          if (isValidIdentifier(value) && !RESERVED.has(value) && !(value in state)) {
+            state[value] = el.innerHTML;
+          }
           const b = { el, prop: "innerHTML", expr: value };
           trackAndBind(b, value);
         }
@@ -303,15 +329,20 @@ async function xenon(initialState = {}) {
         }
         // @bind - two-way binding
         else if (xeMatch(name, "bind")) {
-          const isCheckbox = el.type === "checkbox";
+          const inputType = el.type?.toLowerCase();
+          const isCheckbox = inputType === "checkbox";
+          const isRadio = inputType === "radio";
+          const isSelect = el.tagName === "SELECT";
           const prop = isCheckbox ? "checked" : "value";
-          const event = isCheckbox ? "change" : "input";
+          const event = (isCheckbox || isRadio || isSelect) ? "change" : "input";
 
-          // Set initial value
-          if (!(value in state)) {
-            state[value] = isCheckbox ? el.checked : tryNum(el.value);
-          } else {
-            el[prop] = state[value] ?? "";
+          // Set initial value if valid identifier and not reserved
+          if (isValidIdentifier(value) && !RESERVED.has(value) && !(value in state)) {
+            state[value] = isCheckbox ? el.checked : parseEx(el.value);
+          } else if (value in state) {
+            if (isCheckbox) el.checked = !!state[value];
+            else if (isRadio) el.checked = el.value == state[value];
+            else el.value = state[value] ?? "";
           }
 
           // Listen for changes
@@ -322,7 +353,7 @@ async function xenon(initialState = {}) {
           addListener(el, el, event, handler);
 
           // Bind display
-          const b = { el, prop, expr: value };
+          const b = { el, prop, expr: value, isRadio };
           addBinding(value, b);
         }
         // :attr - dynamic attributes
@@ -331,10 +362,10 @@ async function xenon(initialState = {}) {
           const b = { el, prop: attr, expr: value };
           trackAndBind(b, value);
         }
-        // @init - run once
+        // @init - deferred to run after all bindings are set up
         else if (xeMatch(name, "init")) {
-          const scope = createScope(el);
-          evaluate(value, scope);
+          initFn = value;
+          initEl = el;
         }
         // @calculate - computed properties
         else if (xeMatch(name, "calculate")) {
@@ -374,10 +405,20 @@ async function xenon(initialState = {}) {
             // Outside modifier: only fire if click is outside the element
             if (mods.includes("outside") && el.contains(e.target)) return;
 
-            // Key modifiers
+            // Modifier keys (shift, ctrl, alt, meta)
+            const keyMods = { shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey" };
+            for (const [mod, prop] of Object.entries(keyMods)) {
+              if (mods.includes(mod) && !e[prop]) return;
+            }
+
+            // Key modifiers for keyboard events
             if (["keydown", "keyup", "keypress"].includes(event)) {
-              const keyMod = mods.find(m => !["prevent", "stop", "once", "outside", "document", "debounce"].includes(m) && !m.startsWith("debounce"));
-              if (keyMod && e.key.toLowerCase() !== keyMod.toLowerCase()) return;
+              const keyMod = mods.find(m => !["prevent", "stop", "once", "outside", "document", "debounce", "shift", "ctrl", "alt", "meta"].includes(m) && !m.startsWith("debounce"));
+              if (keyMod) {
+                // Normalize key names: " " -> Space, Escape -> Esc
+                const keyName = e.key === " " ? "Space" : e.key === "Escape" ? "Esc" : e.key;
+                if (keyName.toLowerCase() !== keyMod.toLowerCase()) return;
+              }
             }
 
             if (isHttpMethod) {
@@ -450,13 +491,29 @@ async function xenon(initialState = {}) {
     XENON.listeners.get(el).push({ target, event, handler });
   }
 
+  // Cleanup event listeners when elements are removed
+  function cleanup(el) {
+    [el, ...el.querySelectorAll('*')].forEach(e => {
+      XENON.listeners.get(e)?.forEach(({ target, event, handler }) => target.removeEventListener(event, handler));
+      XENON.listeners.delete(e);
+    });
+  }
+
   // Process initial elements
   await processElements(root);
+  // Run @init after all bindings are set up
+  if (initFn) {
+    const scope = createScope(initEl);
+    evaluate(initFn, scope);
+  }
 
-  // Watch for new elements
+  // Watch for new elements and cleanup removed ones
   XENON.observer?.disconnect();
   XENON.observer = new MutationObserver(async (mutations) => {
     for (const m of mutations) {
+      // Cleanup listeners on removed elements
+      m.removedNodes.forEach(n => n.nodeType === 1 && cleanup(n));
+      // Process new elements
       for (const node of m.addedNodes) {
         if (node.nodeType === 1 && !XENON.processed.has(node)) {
           await processElements(node);
@@ -475,9 +532,18 @@ function xenonTeardown() {
   XENON = null;
 }
 
+// Expose globally
+if (typeof window !== 'undefined') {
+  window.xenon = xenon;
+  window.xenonTeardown = xenonTeardown;
+}
+
 // Auto-initialize
 if (typeof document !== 'undefined') {
   document.addEventListener("DOMContentLoaded", () => xenon());
+  // Turbo integration
+  document.addEventListener("turbo:before-render", () => xenonTeardown());
+  document.addEventListener("turbo:render", () => xenon());
 }
 
 // Export for use
