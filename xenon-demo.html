@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hydrogen Demo - CSP-Safe Reactive Library</title>
+  <title>Xenon Demo - CSP-Safe Reactive Library</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
     .card { border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; border-radius: 8px; }
@@ -15,7 +15,7 @@
   </style>
 </head>
 <body data-helium>
-  <h1>Hydrogen Demo</h1>
+  <h1>Xenon Demo</h1>
   <p>CSP-safe reactive library (no <code>unsafe-eval</code> required)</p>
 
   <!-- Counter Example -->
@@ -77,14 +77,14 @@
   </div>
 
   <script type="module">
-    import hydrogen from './hydrogen.js';
+    import xenon from './xenon.js';
 
     // Initialize with optional global state/functions
-    hydrogen({
+    xenon({
       alert: (msg) => window.alert(msg)
     });
 
-    console.log('Hydrogen loaded - CSP-safe reactive library');
+    console.log('Xenon loaded - CSP-safe reactive library');
   </script>
 </body>
 </html>

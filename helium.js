@@ -98,11 +98,11 @@ const handler = {
   },
     set: (t,p,v) => {
       const res = Reflect.set(t,p,v);
-      if (Array.isArray(t) && !isNaN(p)) {
-        const parentKey = HELIUM.parentKeys.get(t);
-        if (parentKey) HELIUM.bindings.get(parentKey)?.forEach(applyBinding);
-      }
+      // Trigger bindings for this property
       HELIUM.bindings.get(p)?.forEach(applyBinding);
+      // Also trigger parent object's bindings (for nested updates like user.name)
+      const parentKey = HELIUM.parentKeys.get(t);
+      if (parentKey) HELIUM.bindings.get(parentKey)?.forEach(applyBinding);
       HELIUM.bindings.get(ALL)?.forEach(applyBinding);
       return res
     }
@@ -258,6 +258,7 @@ async function processElements(element) {
         }
         else if (he(name, "ref")) {
           HELIUM.refs.set("$" + value, el);
+          state["$" + value] = el;  // Also add to state so expressions can access it
         }
         else if (he(name, "text", "html")) {
           deferredBindings.push({el, prop: he(name, "text") ? "textContent" : "innerHTML", fn: compile(value, true)});

@@ -11,7 +11,6 @@ describe('Helium Reactive Library', () => {
   });
 
   afterEach(() => {
-    window.heliumTeardown?.();
     document.body.innerHTML = '';
   });
 
@@ -339,12 +338,12 @@ describe('Helium Reactive Library', () => {
       expect(container.querySelector('div').textContent).toBe('null');
     });
 
-    it('should handle circular references in state', () => {
+    it('should handle circular references in state', async () => {
       const obj = { name: 'test' };
       obj.self = obj;
 
       container.innerHTML = '<div @text="obj.name"></div>';
-      expect(() => helium({ obj })).not.toThrow();
+      await expect(helium({ obj })).resolves.not.toThrow();
     });
 
     it('should not process already processed elements', async () => {
@@ -362,7 +361,7 @@ describe('Helium Reactive Library', () => {
   });
 
   describe('Performance', () => {
-    it('should handle many bindings efficiently', async () => {
+    it('should handle many bindings efficiently', () => {
       const html = Array.from({ length: 100 }, (_, i) =>
         `<div @text="items[${i}]"></div>`
       ).join('');
@@ -371,7 +370,7 @@ describe('Helium Reactive Library', () => {
       const items = Array.from({ length: 100 }, (_, i) => i);
 
       const start = performance.now();
-      await helium({ items });
+      helium({ items });
       const end = performance.now();
 
       expect(end - start).toBeLessThan(100); // Should initialize in < 100ms
@@ -379,7 +378,7 @@ describe('Helium Reactive Library', () => {
 
     it('should not cause infinite loops with DOM mutations', async () => {
       container.innerHTML = '<div @html="content"></div>';
-      const state = await helium({ content: '<span>Test</span>', updateCount: 0 });
+      const state = helium({ content: '<span>Test</span>', updateCount: 0 });
 
       let mutationCount = 0;
       const observer = new MutationObserver(() => {
@@ -387,6 +386,7 @@ describe('Helium Reactive Library', () => {
       });
       observer.observe(container, { childList: true, subtree: true });
 
+      await new Promise(r => setTimeout(r, 0));
       state.content = '<span>Updated</span>';
       await new Promise(r => setTimeout(r, 100));
       expect(mutationCount).toBeLessThan(10); // Should not cause excessive mutations

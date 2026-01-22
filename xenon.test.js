@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { hydrogen, hydrogenTeardown, evaluate, preprocess } from './hydrogen.js';
+import { xenon, xenonTeardown, evaluate, preprocess } from './xenon.js';
 
-describe('Hydrogen - CSP-Safe Reactive Library', () => {
+describe('Xenon - CSP-Safe Reactive Library', () => {
   let container;
 
   beforeEach(() => {
@@ -11,7 +11,7 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
   });
 
   afterEach(() => {
-    hydrogenTeardown();
+    xenonTeardown();
     document.body.innerHTML = '';
   });
 
@@ -70,31 +70,31 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
   describe('DOM Integration', () => {
     it('should bind text content with @text', async () => {
       container.innerHTML = '<div @text="message"></div>';
-      await hydrogen({ message: 'Hello World' });
+      await xenon({ message: 'Hello World' });
       expect(container.querySelector('div').textContent).toBe('Hello World');
     });
 
     it('should initialize state with @data', async () => {
       container.innerHTML = '<div @data="{ count: 42 }"><span @text="count"></span></div>';
-      await hydrogen({});
+      await xenon({});
       expect(container.querySelector('span').textContent).toBe('42');
     });
 
     it('should handle @hidden directive', async () => {
       container.innerHTML = '<div @hidden="isHidden">Hidden content</div>';
-      await hydrogen({ isHidden: true });
+      await xenon({ isHidden: true });
       expect(container.querySelector('div').hidden).toBe(true);
     });
 
     it('should handle @visible directive', async () => {
       container.innerHTML = '<div @visible="isVisible">Visible content</div>';
-      await hydrogen({ isVisible: false });
+      await xenon({ isVisible: false });
       expect(container.querySelector('div').hidden).toBe(true);
     });
 
     it('should handle two-way binding with @bind', async () => {
       container.innerHTML = '<input @bind="name"><span @text="name"></span>';
-      const state = await hydrogen({ name: 'Alice' });
+      const state = await xenon({ name: 'Alice' });
       const input = container.querySelector('input');
 
       expect(input.value).toBe('Alice');
@@ -108,7 +108,7 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
 
     it('should handle click events', async () => {
       container.innerHTML = '<button @click="count++">Click</button><span @text="count"></span>';
-      const state = await hydrogen({ count: 0 });
+      const state = await xenon({ count: 0 });
 
       container.querySelector('button').click();
 
@@ -119,13 +119,13 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
 
     it('should handle dynamic attributes with :attr', async () => {
       container.innerHTML = '<div :class="isActive ? \'active\' : \'inactive\'"></div>';
-      await hydrogen({ isActive: true });
+      await xenon({ isActive: true });
       expect(container.querySelector('div').getAttribute('class')).toBe('active');
     });
 
     it('should handle @ref directive', async () => {
       container.innerHTML = '<input @ref="myInput"><button @click="$myInput.value = \'test\'">Set</button>';
-      await hydrogen({});
+      await xenon({});
 
       container.querySelector('button').click();
       expect(container.querySelector('input').value).toBe('test');
@@ -133,13 +133,13 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
 
     it('should handle @init directive', async () => {
       container.innerHTML = '<div @init="initialized = true"></div>';
-      const state = await hydrogen({ initialized: false });
+      const state = await xenon({ initialized: false });
       expect(state.initialized).toBe(true);
     });
 
     it('should handle keyboard events with modifiers', async () => {
       container.innerHTML = '<input @keydown.enter="pressed = true">';
-      const state = await hydrogen({ pressed: false });
+      const state = await xenon({ pressed: false });
 
       const input = container.querySelector('input');
       const event = new KeyboardEvent('keydown', { key: 'Enter' });
@@ -150,13 +150,13 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
 
     it('should handle expressions in @text', async () => {
       container.innerHTML = '<span @text="count * 2"></span>';
-      await hydrogen({ count: 5 });
+      await xenon({ count: 5 });
       expect(container.querySelector('span').textContent).toBe('10');
     });
 
     it('should handle ternary in @text', async () => {
       container.innerHTML = '<span @text="count > 5 ? \'big\' : \'small\'"></span>';
-      await hydrogen({ count: 3 });
+      await xenon({ count: 3 });
       expect(container.querySelector('span').textContent).toBe('small');
     });
   });
@@ -164,7 +164,7 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
   describe('Reactivity', () => {
     it('should update DOM when state changes', async () => {
       container.innerHTML = '<span @text="count"></span>';
-      const state = await hydrogen({ count: 0 });
+      const state = await xenon({ count: 0 });
 
       state.count = 10;
       await new Promise(r => setTimeout(r, 0));
@@ -174,7 +174,7 @@ describe('Hydrogen - CSP-Safe Reactive Library', () => {
 
     it('should update DOM on nested property change', async () => {
       container.innerHTML = '<span @text="user.name"></span>';
-      const state = await hydrogen({ user: { name: 'Alice' } });
+      const state = await xenon({ user: { name: 'Alice' } });
 
       state.user.name = 'Bob';
       await new Promise(r => setTimeout(r, 0));
