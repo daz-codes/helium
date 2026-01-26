@@ -12,7 +12,7 @@ Here's a simple example of a button that counts the number of times it has been 
 
 It's really simple to use - just sprinkle the magic @attributes into your HTML and watch it come alive!
 
-[See more examples here](https://codepen.io/daz4126/pen/ogxGMX)
+[See more examples here](https://codepen.io/daz4126/pen/XJKzjxj) and [here](https://codepen.io/daz4126/pen/XJKzjxj)
 
 ## Why Helium?
 
