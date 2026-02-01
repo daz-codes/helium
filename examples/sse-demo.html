@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helium SSE Demo</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.6;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-right: 0.5rem;
+      background: #4a90d9;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover { background: #357abd; }
+    button:active { background: #2a5f8f; }
+    .output {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f5f5f5;
+      border-radius: 4px;
+      min-height: 2rem;
+      border: 1px solid #ddd;
+    }
+    #events {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f0fff0;
+      border-radius: 4px;
+      min-height: 100px;
+      border: 1px solid #9d9;
+    }
+    .event-item {
+      padding: 0.25rem 0;
+      border-bottom: 1px solid #ccc;
+      font-family: monospace;
+    }
+    h2 { margin-top: 2rem; color: #333; }
+    code { background: #eee; padding: 0.2rem 0.4rem; border-radius: 3px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .card {
+      background: #fff;
+      padding: 0.75rem;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+    }
+    .card strong { display: block; margin-bottom: 0.5rem; color: #666; }
+  </style>
+</head>
+<body data-helium>
+  <h1>Helium SSE Demo</h1>
+  <p>This demo shows Helium's Server-Sent Events support. Run the server with: <code>node examples/sse-server.js</code></p>
+
+  <h2>1. Hello World (like Datastar's /api/hello-world)</h2>
+  <p>Streams a greeting character by character:</p>
+  <button @get="/api/hello-world" @target="#message">Start</button>
+  <div id="message" class="output">&nbsp;</div>
+
+  <h2>2. Streaming Counter</h2>
+  <p>Receives multiple SSE events counting from 1 to 10:</p>
+  <button @get="/api/count" @target="#counter">Start Counting</button>
+  <div id="counter" class="output" style="font-size: 2rem; font-weight: bold; text-align: center;">&nbsp;</div>
+
+  <h2>3. Multi-target Updates</h2>
+  <p>Single request updates multiple elements using the SSE <code>event:</code> field as target selector:</p>
+  <button @get="/api/dashboard">Load Dashboard</button>
+  <div class="grid">
+    <div class="card">
+      <strong>Header (#header)</strong>
+      <div id="header">&nbsp;</div>
+    </div>
+    <div class="card">
+      <strong>Stats (#stats)</strong>
+      <div id="stats">&nbsp;</div>
+    </div>
+  </div>
+
+  <h2>4. State Updates</h2>
+  <p>When target isn't a DOM selector, SSE updates reactive state directly:</p>
+  <button @get="/api/time" @target="currentTime">Get Server Time</button>
+  <div class="output">
+    Server time: <strong @text="currentTime || '(click button)'"></strong>
+  </div>
+
+  <h2>5. Appending Events</h2>
+  <p>Events appended as they arrive (simulated activity log):</p>
+  <button @get="/api/events" @target="#events:append">Start Stream</button>
+  <button @click="$('#events').innerHTML = ''" style="background: #888;">Clear</button>
+  <div id="events"></div>
+
+  <hr style="margin-top: 2rem;">
+  <h2>SSE Format</h2>
+  <p>Helium's SSE format is simple:</p>
+  <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+event: #target-selector   (or state property name)
+data: &lt;div&gt;HTML content&lt;/div&gt;
+
+event: #another-target
+data: More content here
+</pre>
+
+  <script type="module">
+    import helium from '../helium.js';
+
+    helium({
+      currentTime: null
+    });
+  </script>
+</body>
+</html>

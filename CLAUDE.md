@@ -24,6 +24,7 @@ There is no build step - `helium.js` is the single-file library used directly.
 - **Proxy-based reactivity**: Uses JavaScript Proxy to intercept state changes and trigger DOM updates
 - **Attribute-driven**: Interactivity is declared via `@` prefixed HTML attributes (with `data-he-*` aliases for HTML validation)
 - **Expression compilation**: Inline expressions are compiled to functions using `new Function()` with caching
+- **Pluggable expression engine**: Use `createHelium()` to create variants with custom expression engines
 
 ### Data Flow
 
@@ -44,8 +45,15 @@ HTML parsed → processElements() registers bindings → expressions compiled (c
 ### File Structure
 
 - `helium.js` - Main library implementation
-- `helium.test.js` - Comprehensive test suite (38 tests across 15 suites)
+- `helium.test.js` - Comprehensive test suite
 - `vitest.config.js` - Test configuration (jsdom environment, globals enabled)
+
+### Exports
+
+```javascript
+import helium from 'helium';           // Default helium function
+import { createHelium } from 'helium'; // Factory for custom variants
+```
 
 ## Key Directives
 
@@ -62,6 +70,14 @@ HTML parsed → processElements() registers bindings → expressions compiled (c
 | `@calculate` | Computed properties |
 | `@effect` | Side effects on state changes |
 | `@get/@post/@put/@patch/@delete` | HTTP requests |
+| `@import` | Import ES modules: `@import="utils"` or `@import="https://cdn.example.com/lib.js"` |
+
+## Imports
+
+`@import` loads ES modules and adds their named exports to state. Paths are flexible:
+- `utils` → `./utils.js` (same folder, .js added automatically)
+- `modules/helpers` → `./modules/helpers.js` (subfolders work)
+- `https://...` → URLs used as-is (for CDNs, GitHub raw files, etc.)
 
 ## Magic Variables
 
@@ -70,10 +86,30 @@ Available in all expressions: `$` (querySelector), `$el` (current element), `$ev
 ## Important Notes
 
 - **Functions and reactivity**: Magic variables are NOT available inside functions defined in `@data`. Pass `$data` as an argument to enable reactive updates: `@click="myFunc($data)"`
-- **CSP**: Library uses `new Function()` which requires `unsafe-eval` if using strict Content Security Policy
+- **CSP**: Library uses `new Function()` which requires `unsafe-eval` if using strict Content Security Policy. For CSP-safe environments, see the [Xenon](https://github.com/daz-codes/xenon) variant.
 - **Idiomorph integration**: If Idiomorph is loaded, Helium automatically uses it for efficient DOM morphing
 - **Turbo/Hotwire**: Automatic integration via `turbo:before-render` and `turbo:render` events
-- **LLM_GUIDE.md note**: Uses `@react` instead of `@text` - the README is authoritative
+
+## Creating Custom Variants
+
+Use `createHelium()` to create variants with custom expression engines:
+
+```javascript
+import { createHelium } from 'helium';
+
+const { helium, heliumTeardown } = createHelium({
+  engine: {
+    compile(expr, withReturn) {
+      // Return { execute(scope), getIds() }
+    },
+    createScope(ctx) {
+      // Return scope object for expression execution
+    }
+  },
+  prefix: 'my',      // For data-my-* attributes
+  rootAttr: 'mylib'  // For @mylib / data-mylib root element
+});
+```
 
 ## Testing Patterns
 
@@ -88,12 +124,13 @@ describe('Feature', () => {
   });
 
   afterEach(() => {
+    window.heliumTeardown?.();
     document.body.innerHTML = '';
   });
 
-  it('should work', () => {
+  it('should work', async () => {
     container.innerHTML = '<div @text="count"></div>';
-    helium({ count: 5 });
+    await helium({ count: 5 });
     expect(container.querySelector('div').textContent).toBe('5');
   });
 });

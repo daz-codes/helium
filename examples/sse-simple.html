@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helium SSE - Simple Demo</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 600px;
+      margin: 4rem auto;
+      padding: 0 1rem;
+      text-align: center;
+    }
+    button {
+      padding: 1rem 2rem;
+      font-size: 1.2rem;
+      cursor: pointer;
+      background: #4a90d9;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      margin-bottom: 2rem;
+    }
+    button:hover { background: #357abd; }
+    button:active { background: #2a5f8f; }
+    #message {
+      padding: 2rem;
+      background: #f5f5f5;
+      border-radius: 8px;
+      min-height: 3rem;
+      font-size: 1.5rem;
+      border: 2px solid #ddd;
+    }
+  </style>
+</head>
+<body data-helium>
+  <h1>Helium SSE Demo</h1>
+
+  <button @get="/api/hello-world" @target="#message">Start</button>
+
+  <div id="message">&nbsp;</div>
+
+  <script type="module">
+    import helium from '../helium.js';
+    helium();
+  </script>
+</body>
+</html>

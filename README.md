@@ -263,7 +263,7 @@ Runs a side effect whenever specified dependencies change. Use `:*` to run on an
 
 ### @import
 
-Imports ES modules from the `helium_modules/` directory into Helium's scope, making their exports available in Helium expressions.
+Imports ES modules into Helium's scope, making their exports available in Helium expressions.
 
 ```html
 <div @import="utils,api">
@@ -272,12 +272,24 @@ Imports ES modules from the `helium_modules/` directory into Helium's scope, mak
 </div>
 ```
 
-This dynamically imports modules and adds all their exports to Helium's state. Modules should be placed in a `helium_modules/` directory relative to your HTML file.
+This dynamically imports modules and adds all their named exports to Helium's state.
+
+**Import paths:**
+
+| Path | Resolves to |
+|------|-------------|
+| `utils` | `./utils.js` |
+| `modules/helpers` | `./modules/helpers.js` |
+| `./utils.js` | `./utils.js` |
+| `../shared/utils` | `../shared/utils.js` |
+| `https://example.com/lib.js` | `https://example.com/lib.js` |
+
+The `.js` extension is added automatically if not provided. URLs are used as-is.
 
 **Example:**
 
 ```javascript
-// helium_modules/utils.js
+// utils.js
 export function formatDate(date) {
   return date.toLocaleDateString();
 }
@@ -288,7 +300,7 @@ export function capitalize(str) {
 ```
 
 ```javascript
-// helium_modules/api.js
+// api.js
 export const API_VERSION = '1.0.0';
 export const API_URL = 'https://api.example.com';
 ```
@@ -297,6 +309,15 @@ export const API_URL = 'https://api.example.com';
 <div @import="utils,api">
   <button @click="alert(capitalize('hello'))">Capitalize</button>
   <p @text="API_VERSION"></p>
+</div>
+```
+
+**Importing from URLs:**
+
+```html
+<!-- Import from a CDN or GitHub -->
+<div @import="https://cdn.example.com/helpers.js">
+  <button @click="helper()">Use Remote Helper</button>
 </div>
 ```
 

@@ -303,6 +303,177 @@ describe('Helium Reactive Library', () => {
     });
   });
 
+  describe('Server-Sent Events (SSE)', () => {
+    // Helper to create a mock SSE ReadableStream
+    const createSSEStream = (events) => {
+      const encoder = new TextEncoder();
+      let index = 0;
+      return new ReadableStream({
+        pull(controller) {
+          if (index < events.length) {
+            controller.enqueue(encoder.encode(events[index]));
+            index++;
+          } else {
+            controller.close();
+          }
+        }
+      });
+    };
+
+    beforeEach(() => {
+      global.fetch = vi.fn();
+    });
+
+    it('should handle basic SSE stream updating DOM target', async () => {
+      // Simulate SSE response like Datastar hello-world example
+      const sseData = 'event: #message\ndata: <div>Hello from SSE!</div>\n\n';
+
+      global.fetch.mockResolvedValueOnce({
+        headers: { get: () => 'text/event-stream' },
+        body: createSSEStream([sseData])
+      });
+
+      container.innerHTML = `
+        <button @get="/api/hello-world" @target="#message">Start</button>
+        <div id="message"></div>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(container.querySelector('#message').innerHTML).toBe('<div>Hello from SSE!</div>');
+    });
+
+    it('should handle multiple SSE events in sequence', async () => {
+      const sseData = [
+        'event: #counter\ndata: <span>1</span>\n\n',
+        'event: #counter\ndata: <span>2</span>\n\n',
+        'event: #counter\ndata: <span>3</span>\n\n'
+      ];
+
+      global.fetch.mockResolvedValueOnce({
+        headers: { get: () => 'text/event-stream' },
+        body: createSSEStream(sseData)
+      });
+
+      container.innerHTML = `
+        <button @get="/api/count" @target="#counter">Count</button>
+        <div id="counter"></div>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Should have the last value after all events processed
+      expect(container.querySelector('#counter').innerHTML).toBe('<span>3</span>');
+    });
+
+    it('should update state when event targets a state property', async () => {
+      const sseData = 'event: message\ndata: Hello World\n\n';
+
+      global.fetch.mockResolvedValueOnce({
+        headers: { get: () => 'text/event-stream' },
+        body: createSSEStream([sseData])
+      });
+
+      container.innerHTML = `
+        <button @get="/api/message" @target="message">Load</button>
+        <span @text="message"></span>
+      `;
+      const state = await helium({ message: '' });
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(state.message).toBe('Hello World');
+      expect(container.querySelector('span').textContent).toBe('Hello World');
+    });
+
+    it('should handle multiline data in SSE events', async () => {
+      const sseData = 'data: line 1\ndata: line 2\ndata: line 3\n\n';
+
+      global.fetch.mockResolvedValueOnce({
+        headers: { get: () => 'text/event-stream' },
+        body: createSSEStream([sseData])
+      });
+
+      container.innerHTML = `
+        <button @get="/api/multiline" @target="#output">Load</button>
+        <pre id="output"></pre>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(container.querySelector('#output').innerHTML).toBe('line 1\nline 2\nline 3');
+    });
+
+    it('should use @target for SSE updates', async () => {
+      const sseData = 'data: <div>SSE content</div>\n\n';
+
+      global.fetch.mockResolvedValueOnce({
+        headers: { get: () => 'text/event-stream' },
+        body: createSSEStream([sseData])
+      });
+
+      container.innerHTML = `
+        <button @get="/api/simple" @target="#result">Load</button>
+        <div id="result"></div>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(container.querySelector('#result').innerHTML).toBe('<div>SSE content</div>');
+    });
+
+    it('should track event id for potential reconnection', async () => {
+      const sseData = 'id: 42\ndata: <span>Connected</span>\n\n';
+
+      global.fetch.mockResolvedValueOnce({
+        headers: { get: () => 'text/event-stream' },
+        body: createSSEStream([sseData])
+      });
+
+      container.innerHTML = `
+        <button @get="/api/status" @target="#status">Connect</button>
+        <div id="status"></div>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(container.querySelector('#status').innerHTML).toBe('<span>Connected</span>');
+    });
+
+    it('should handle chunked SSE data', async () => {
+      // Simulate data arriving in chunks (like real network)
+      const chunk1 = 'event: #result\nda';
+      const chunk2 = 'ta: <div>Chunked!</div>\n\n';
+
+      global.fetch.mockResolvedValueOnce({
+        headers: { get: () => 'text/event-stream' },
+        body: createSSEStream([chunk1, chunk2])
+      });
+
+      container.innerHTML = `
+        <button @get="/api/chunked" @target="#result">Load</button>
+        <div id="result"></div>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(container.querySelector('#result').innerHTML).toBe('<div>Chunked!</div>');
+    });
+  });
+
   describe('Dynamic DOM Updates', () => {
     it('should process dynamically added elements', async () => {
       container.innerHTML = '<div id="container"></div>';
@@ -330,13 +501,13 @@ describe('Helium Reactive Library', () => {
     it('should handle undefined state values', async () => {
       container.innerHTML = '<div @text="undefined"></div>';
       await helium({});
-      expect(container.querySelector('div').textContent).toBe('undefined');
+      expect(container.querySelector('div').textContent).toBe('');
     });
 
     it('should handle null state values', async () => {
       container.innerHTML = '<div @text="value"></div>';
       await helium({ value: null });
-      expect(container.querySelector('div').textContent).toBe('null');
+      expect(container.querySelector('div').textContent).toBe('');
     });
 
     it('should handle circular references in state', () => {
@@ -392,5 +563,113 @@ describe('Helium Reactive Library', () => {
       expect(mutationCount).toBeLessThan(10); // Should not cause excessive mutations
       observer.disconnect();
     });
+  });
+});
+
+describe('@calculate', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    heliumTeardown();
+    document.body.innerHTML = '';
+  });
+
+  it('should compute derived values from state', async () => {
+    container.innerHTML = `
+      <div @data="{ firstname: 'John', lastname: 'Doe' }">
+        <span @calculate:fullname="firstname + ' ' + lastname"></span>
+        <span id="result" @text="fullname"></span>
+      </div>
+    `;
+    await helium();
+    expect(container.querySelector('#result').textContent).toBe('John Doe');
+  });
+
+  it('should update when dependencies change', async () => {
+    container.innerHTML = `
+      <div @data="{ x: 5, y: 3 }">
+        <span @calculate:sum="x + y"></span>
+        <span id="result" @text="sum"></span>
+        <button @click="x = 10">Update</button>
+      </div>
+    `;
+    const state = await helium();
+    expect(container.querySelector('#result').textContent).toBe('8');
+    
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 10));
+    expect(container.querySelector('#result').textContent).toBe('13');
+  });
+
+  it('should update @text with fallback expression when @calculate value changes', async () => {
+    container.innerHTML = `
+      <div @data="{ firstname: '', lastname: '' }">
+        <input id="first" @bind="firstname">
+        <input id="last" @bind="lastname">
+        <span @calculate:fullname="firstname && lastname ? firstname + ' ' + lastname : firstname || lastname || ''"></span>
+        <span id="result" @text="fullname || 'stranger'"></span>
+      </div>
+    `;
+    const state = await helium();
+
+    // Initially should show 'stranger' since fullname is ''
+    expect(container.querySelector('#result').textContent).toBe('stranger');
+
+    // Update firstname
+    const firstInput = container.querySelector('#first');
+    firstInput.value = 'John';
+    firstInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 10));
+
+    // Should now show 'John' (since lastname is still empty, fullname = 'John')
+    expect(container.querySelector('#result').textContent).toBe('John');
+
+    // Update lastname
+    const lastInput = container.querySelector('#last');
+    lastInput.value = 'Doe';
+    lastInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 10));
+
+    // Should now show 'John Doe'
+    expect(container.querySelector('#result').textContent).toBe('John Doe');
+  });
+
+  it('should handle password strength pattern with nested property access', async () => {
+    container.innerHTML = `
+      <div @data="{ password: '' }">
+        <input id="pw" type="password" @bind="password">
+        <span @calculate:strength="password.length < 4 ? 'Weak' : password.length < 8 ? 'Medium' : 'Strong'"></span>
+        <span id="result" @text="strength"></span>
+      </div>
+    `;
+    await helium();
+
+    // Initially should show 'Weak' (empty password)
+    expect(container.querySelector('#result').textContent).toBe('Weak');
+
+    // Type 'abc' (3 chars) - still Weak
+    const input = container.querySelector('#pw');
+    input.value = 'abc';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 10));
+    expect(container.querySelector('#result').textContent).toBe('Weak');
+
+    // Type 'abcdef' (6 chars) - Medium
+    input.value = 'abcdef';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 10));
+    expect(container.querySelector('#result').textContent).toBe('Medium');
+
+    // Type 'abcdefgh' (8 chars) - Strong
+    input.value = 'abcdefgh';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 10));
+    expect(container.querySelector('#result').textContent).toBe('Strong');
   });
 });

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:data-star.dev)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "Bash(npm run test:run:*)",
+      "Bash(npm link)",
+      "Bash(npm install)",
+      "Bash(npm link helium)"
+    ]
+  }
+}

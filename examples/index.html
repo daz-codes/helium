@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helium Examples</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 2rem;
+      font-size: 2.5rem;
+    }
+
+    .examples {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 50px rgba(0,0,0,0.25);
+    }
+
+    .card.active {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      border: 2px solid #667eea;
+    }
+
+    .card h2 {
+      margin: 0 0 1rem 0;
+      color: #333;
+      font-size: 1.25rem;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 0.5rem;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+
+    button:hover {
+      transform: scale(1.02);
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 0.6rem;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .color-preview {
+      width: 100%;
+      height: 60px;
+      border-radius: 6px;
+      margin-top: 0.5rem;
+      transition: background-color 0.3s;
+    }
+
+    .keyboard-display {
+      font-family: monospace;
+      background: #1a1a2e;
+      color: #0f0;
+      padding: 1rem;
+      border-radius: 6px;
+      min-height: 40px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background: #eee;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transition: width 0.3s;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1rem;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      background: #eee;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .tab:first-child { border-radius: 6px 0 0 6px; }
+    .tab:last-child { border-radius: 0 6px 6px 0; }
+    .tab.active { background: #667eea; color: white; }
+
+    .tab-content {
+      padding: 1rem;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+
+    .response {
+      padding: 1rem;
+      border-radius: 6px;
+      margin-top: 0.5rem;
+    }
+
+    .response.blue { background: #e3f2fd; }
+    .response.red { background: #ffebee; }
+
+    .form label {
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .form label span {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+
+    .post {
+      background: #f0f0f0;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-top: 0.5rem;
+    }
+
+    .post h1 {
+      font-size: 1.1rem;
+      color: #333;
+      margin: 0 0 0.5rem 0;
+      text-align: left;
+    }
+
+    .post p {
+      margin: 0;
+      color: #666;
+    }
+
+    .emoji-picker {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .emoji-btn {
+      font-size: 1.5rem;
+      padding: 0.5rem;
+      background: #f0f0f0;
+      border-radius: 8px;
+    }
+
+    .emoji-btn:hover {
+      background: #e0e0e0;
+    }
+
+    .selected-emoji {
+      font-size: 3rem;
+      text-align: center;
+      padding: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="page" data-helium @data="{ count: 0 }">
+  <h1>Helium Examples</h1>
+
+  <div class="examples">
+
+    <!-- Counter -->
+    <div class="card">
+      <h2>Counter</h2>
+      <p>Simple reactive counter with increment/decrement.</p>
+      <div class="button-group">
+        <button @click="count--">-</button>
+        <button @click="count++">+</button>
+      </div>
+      <p>Count: <b @text="count">0</b></p>
+    </div>
+
+    <!-- Dynamic Classes -->
+    <div
+      @data="{ active: false }"
+      :class="{active: active}"
+      class="card"
+    >
+      <h2>Dynamic Classes</h2>
+      <p>Toggle the active state to change card styling.</p>
+      <button @click="active = !active">
+        Toggle (<span @text="active ? 'ON' : 'OFF'">OFF</span>)
+      </button>
+    </div>
+
+    <!-- Two-way Binding -->
+    <div class="card" @data="{ firstname: '', lastname: '' }">
+      <h2>Two-Way Binding</h2>
+      <input @bind="firstname" placeholder="First name">
+      <input @bind="lastname" placeholder="Last name">
+      <span @calculate:fullname="firstname && lastname ? firstname + ' ' + lastname : firstname || lastname || 'stranger'"></span>
+      <p>Hello, <b @text="fullname">stranger</b>!</p>
+      <button @click="firstname = '', lastname = ''">Clear</button>
+    </div>
+
+    <!-- Visibility Toggle -->
+    <div @data="{ show: true }" class="card">
+      <h2>Visibility Toggle</h2>
+      <button @click="show = !show" @text="show ? 'Hide' : 'Show'">Show</button>
+      <p @visible="show">Now you see me!</p>
+      <p @hidden="show">Now you don't!</p>
+    </div>
+
+    <!-- Checkbox Binding -->
+    <div class="card" @data="{ agreed: false, newsletter: true }">
+      <h2>Checkbox Binding</h2>
+      <label>
+        <input type="checkbox" @bind="agreed"> I agree to the terms
+      </label>
+      <label>
+        <input type="checkbox" @bind="newsletter"> Subscribe to newsletter
+      </label>
+      <p>
+        Terms: <b @text="agreed ? 'Accepted' : 'Not accepted'">Not accepted</b><br>
+        Newsletter: <b @text="newsletter ? 'Subscribed' : 'Not subscribed'">Subscribed</b>
+      </p>
+      <button @click="agreed = true, newsletter = true">Accept All</button>
+    </div>
+
+    <!-- Radio Buttons -->
+    <div class="card" @data="{ size: 'medium' }">
+      <h2>Radio Buttons</h2>
+      <label><input type="radio" name="size" value="small" @bind="size"> Small</label>
+      <label><input type="radio" name="size" value="medium" @bind="size"> Medium</label>
+      <label><input type="radio" name="size" value="large" @bind="size"> Large</label>
+      <p>Selected size: <b @text="size">medium</b></p>
+    </div>
+
+    <!-- Select Dropdown -->
+    <div class="card" @data="{ color: 'blue' }">
+      <h2>Select Dropdown</h2>
+      <select @bind="color">
+        <option value="red">Red</option>
+        <option value="green">Green</option>
+        <option value="blue">Blue</option>
+        <option value="purple">Purple</option>
+      </select>
+      <p @text="color"></p>
+      <div class="color-preview" :style="{ backgroundColor: color }"></div>
+    </div>
+
+    <!-- Dynamic Style -->
+    <div class="card" @data="{ width: 50 }">
+      <h2>Dynamic Style</h2>
+      <input type="range" min="0" max="100" @bind="width">
+      <p>Width: <b @text="width">50</b>%</p>
+      <div class="progress-bar">
+        <div class="progress-fill" :style="{ width: width + '%' }"></div>
+      </div>
+    </div>
+
+    <!-- Keyboard Events -->
+    <div class="card" @data="{ lastKey: 'Press a key...' }">
+      <h2>Keyboard Events</h2>
+      <input placeholder="Type here..." @keydown="lastKey = $event.key" @keydown.enter="lastKey = 'ENTER pressed!'" @keydown.esc="lastKey = 'Escaped!'">
+      <div class="keyboard-display" @text="lastKey">Press a key...</div>
+    </div>
+
+    <!-- Debounced Input -->
+    <div class="card" @data="{ search: '', debouncedSearch: '' }">
+      <h2>Debounced Input</h2>
+      <p>Type and wait 500ms to see the debounced value update.</p>
+      <input placeholder="Search..." @bind="search" @input.debounce:500="debouncedSearch = search">
+      <p>Immediate: <b @text="search || '(empty)'"></b></p>
+      <p>Debounced: <b @text="debouncedSearch || '(empty)'"></b></p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="card" @data="{ tab: 'one' }">
+      <h2>Tabs</h2>
+      <div class="tabs">
+        <button class="tab" :class="{ active: tab === 'one' }" @click="tab = 'one'">Tab 1</button>
+        <button class="tab" :class="{ active: tab === 'two' }" @click="tab = 'two'">Tab 2</button>
+        <button class="tab" :class="{ active: tab === 'three' }" @click="tab = 'three'">Tab 3</button>
+      </div>
+      <div class="tab-content" @visible="tab === 'one'">Content for Tab 1</div>
+      <div class="tab-content" @visible="tab === 'two'">Content for Tab 2</div>
+      <div class="tab-content" @visible="tab === 'three'">Content for Tab 3</div>
+    </div>
+
+    <!-- Element References -->
+    <div class="card">
+      <h2>Element References</h2>
+      <input @ref="myInput" placeholder="Focus me!">
+      <div class="button-group">
+        <button @click="$myInput.focus()">Focus Input</button>
+        <button @click="$myInput.value = 'Hello!'">Set Value</button>
+        <button @click="$myInput.value = ''">Clear</button>
+      </div>
+    </div>
+
+    <!-- Emoji Picker -->
+    <div class="card" @data="{ emoji: '' }">
+      <h2>Emoji Picker</h2>
+      <div class="emoji-picker">
+        <button class="emoji-btn" @click="emoji = '😀'">😀</button>
+        <button class="emoji-btn" @click="emoji = '🎉'">🎉</button>
+        <button class="emoji-btn" @click="emoji = '🚀'">🚀</button>
+        <button class="emoji-btn" @click="emoji = '💡'">💡</button>
+        <button class="emoji-btn" @click="emoji = '🎈'">🎈</button>
+        <button class="emoji-btn" @click="emoji = '❤️'">❤️</button>
+      </div>
+      <div class="selected-emoji" @text="emoji || 'Pick one!'">Pick one!</div>
+    </div>
+
+    <!-- Calculator -->
+    <div class="card" @data="{ a: 10, b: 5, op: '+' }">
+      <h2>Calculator</h2>
+      <input type="number" @bind="a" placeholder="First number">
+      <select @bind="op">
+        <option value="+">+</option>
+        <option value="-">-</option>
+        <option value="*">×</option>
+        <option value="/">÷</option>
+      </select>
+      <input type="number" @bind="b" placeholder="Second number">
+      <span @calculate:result="op === '+' ? a + b : op === '-' ? a - b : op === '*' ? a * b : op === '/' ? a / b : 0"></span>
+      <p style="font-size: 1.5rem; text-align: center;">
+        <span @text="a">10</span>
+        <span @text="op">+</span>
+        <span @text="b">5</span>
+        = <b @text="result">15</b>
+      </p>
+    </div>
+
+    <!-- Character Counter -->
+    <div class="card" @data="{ text: '', maxLength: 100 }">
+      <h2>Character Counter</h2>
+      <textarea @bind="text" placeholder="Type something..." rows="3"></textarea>
+      <span @calculate:remaining="maxLength - text.length"></span>
+      <p :style="{ color: remaining < 20 ? 'red' : 'inherit' }">
+        <b @text="remaining">100</b> characters remaining
+      </p>
+    </div>
+
+    <!-- Password Strength -->
+    <div class="card" @data="{ password: '' }">
+      <h2>Password Strength</h2>
+      <input type="password" @bind="password" placeholder="Enter password">
+      <span @calculate:strength="password ? (password.length < 4 ? 'Weak' : password.length < 8 ? 'Medium' : 'Strong') : 'Enter a password'"></span>
+      <span @calculate:strengthWidth="password.length < 4 ? 33 : password.length < 8 ? 66 : 100"></span>
+      <div class="progress-bar">
+        <div class="progress-fill" :style="{ width: strengthWidth + '%', background: strength === 'Weak' ? 'red' : strength === 'Medium' ? 'orange' : 'green' }"></div>
+      </div>
+      <p>Strength: <b @text="strength"></b></p>
+    </div>
+
+    <!-- Init Example -->
+    <div class="card" @data="{ loadTime: '' }">
+      <h2>Init Example</h2>
+      <p @init="loadTime = new Date().toLocaleTimeString()">
+        Page loaded at: <b @text="loadTime"></b>
+      </p>
+      <button @click="loadTime = new Date().toLocaleTimeString()">Update Time</button>
+    </div>
+
+    <!-- Effect Example -->
+    <div class="card" @data="{ clicks: 0, history: [] }">
+      <h2>Effect (Side Effects)</h2>
+      <p>Click the button and watch the history build up.</p>
+      <button @click="clicks++">Click Me</button>
+      <span @effect="clicks > 0 ? history.push('Click #' + clicks) : null"></span>
+      <p>Clicks: <b @text="clicks">0</b></p>
+      <p>History: <span @text="history.join(', ') || 'None yet'">None yet</span></p>
+    </div>
+
+  </div>
+
+<!-- AJAX Examples Section -->
+<div class="page" style="margin-top: 2rem;" @data="{
+  templates: {
+    post: data => `<section class='post'><h1>${data?.title || 'Loading...'}</h1><p>${data?.body || ''}</p></section>`
+  }
+}">
+  <h1>AJAX Examples</h1>
+
+  <div class="examples">
+
+    <!-- HTML Response -->
+    <section class="card">
+      <h2>HTML Response</h2>
+      <div id="table"><p>Click to fetch an HTML table from the server.</p></div>
+      <button @get.once="https://html-mock.fly.dev/tag/table" @target="#table" @loading="<p>Loading table...</p>">Get HTML Table</button>
+    </section>
+
+    <!-- Request Methods -->
+    <section class="card" @data="{ put_response: '', delete_response: '' }">
+      <h2>Request Methods</h2>
+      <p>PUT adds to account, DELETE (shift+click) removes.</p>
+      <div class="button-group">
+        <button @put="https://html-mock.fly.dev/tag/paragraph" @loading="<span>Adding...</span>" @params="{cash: 100}" @target="put_response">PUT - Add Funds</button>
+        <button @delete.shift="https://html-mock.fly.dev/tag/paragraph" @params="{account: 1}" @target="delete_response">DELETE (Shift+Click)</button>
+      </div>
+      <div @html="put_response" class="response blue">PUT response will appear here</div>
+      <div @html="delete_response" class="response red">DELETE response will appear here</div>
+    </section>
+
+    <!-- Posts with JSON -->
+    <section @ref="posts" class="card">
+      <h2>Posts (JSON + Template)</h2>
+      <p>Fetch posts and render them using a template function.</p>
+      <form @ref="form" class="form">
+        <label><span>Title:</span><input type="hidden" name="userId" value="5"><input name="title" placeholder="Post title"></label>
+        <label><span>Body:</span><textarea name="body" rows="2" placeholder="Post content"></textarea></label>
+        <button @post.prevent="https://dummyjson.com/posts/add" @params="new FormData($form)" @target="$posts:append" @template="templates.post" @loading="templates.post({title: 'Saving...', body: 'Please wait'})">Create Post</button>
+      </form>
+      <div class="button-group" style="margin-top: 1rem;">
+        <button @get.debounce:500="https://dummyjson.com/posts/1" @target="$posts:append" @template="templates.post" @loading="<p>Loading post...</p>">Get Post #1</button>
+        <button @get.debounce:500="https://dummyjson.com/posts/2" @target="$posts:append" @template="templates.post" @loading="<p>Loading post...</p>">Get Post #2</button>
+      </div>
+    </section>
+
+  </div>
+</div>
+</div>
+
+<script>
+(function(){
+const parseEx=v=>{try{return Function(`return(${v})`)()}catch{return v}};
+const tryNum=v=>{const t=String(v).trim(),n=+t;return t&&!isNaN(n)?n:v};
+const isValidIdentifier=v=>/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(v);
+const RESERVED=new Set(['undefined','null','true','false','NaN','Infinity','this','arguments']);
+const INPUT_EVENTS={form:"submit",input:"input",textarea:"input",select:"change"};
+const KEY_MODS={shift:"shiftKey",ctrl:"ctrlKey",alt:"altKey",meta:"metaKey"};
+const getEvent=el=>INPUT_EVENTS[el.tagName.toLowerCase()]||"click";
+const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))};
+
+const defaultEngine={
+  compile(expr,withReturn=true){
+    try{
+      const fn=new Function("$scope",withReturn?`with($scope){with($scope.$data){return(${expr.trim()})}}`:`with($scope){with($scope.$data){${expr.trim()}}}`);
+      return{execute:scope=>fn(scope),getIds:null};
+    }catch{return{execute:()=>expr,getIds:null};}
+  },
+  createScope(ctx){return{$:ctx.$,$data:ctx.state,$event:ctx.event,$el:ctx.el,$html:ctx.html,$get:ctx.get,$post:ctx.post,$put:ctx.put,$patch:ctx.patch,$delete:ctx.del,...ctx.refs};}
+};
+
+function createHelium(options={}){
+  const engine=options.engine??defaultEngine;
+  const prefix=options.prefix??'he';
+  const rootAttr=options.rootAttr??'helium';
+  const ATTR_REGEX=new RegExp(`^(@|:|data-${prefix})`);
+  const match=(name,...attrs)=>{const p=name.split(/[.:]/)[0];if(p===":"||p==="")return false;return attrs.some(a=>p===`@${a}`||p===`data-${prefix}-${a}`);};
+  let HELIUM=null;
+
+  async function helium(initialState={}){
+    console.log('[HELIUM] Starting...');
+    const inits=[];
+    const ALL=Symbol("all");
+    const root=document.querySelector(`[\\@${rootAttr}]`)||document.querySelector(`[data-${rootAttr}]`)||document.body;
+    console.log('[HELIUM] Root element:', root);
+    if(!HELIUM){HELIUM={observer:null,bindings:new Map(),refs:new Map(),listeners:new WeakMap(),processed:new WeakSet(),parentKeys:new WeakMap(),fnCache:new Map(),proxyCache:new WeakMap()};}
+    const $=s=>document.querySelector(s);
+    const html=s=>Object.assign(document.createElement("template"),{innerHTML:s.trim()}).content.firstChild;
+    const update=(data,targets,actions,template)=>{const newTargets=[];(targets||[]).forEach((target,i)=>{const element=target instanceof Node?target:(HELIUM.refs.get(target.trim())||$(target.trim()));if(element){const content=template?template(data):data;const htmlContent=html(content);actions?.[i]?element[actions[i]=="replace"?"replaceWith":actions[i]](htmlContent):element.innerHTML=content;newTargets.push(actions?.[i]?htmlContent:element)}else state[target]=data});return newTargets};
+    const handleSSE=async(res,options,reconnect)=>{const reader=res.body.getReader();const decoder=new TextDecoder();let buffer='',lastId=null,retryDelay=options.retry||3000;const processEvents=()=>{const parts=buffer.split('\n\n');buffer=parts.pop();for(const block of parts){if(!block.trim())continue;let data='',id=null;for(const line of block.split('\n')){if(line.startsWith('data:'))data+=(data?'\n':'')+line.slice(5).trimStart();else if(line.startsWith('id:'))id=line.slice(3).trim();else if(line.startsWith('retry:'))retryDelay=parseInt(line.slice(6).trim())||retryDelay;}if(id)lastId=id;if(data){update(data,options.target,options.action,options.template);}}};try{while(true){const{done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});processEvents();}if(buffer.trim()){buffer+='\n\n';processEvents();}if(options.retryMode==='always')setTimeout(()=>reconnect(lastId),retryDelay);}catch(e){console.error("SSE:",e.message);if(options.retryMode==='always'||options.retryMode==='error'){setTimeout(()=>reconnect(lastId),retryDelay);}}};
+    const ajax=(url,method,options={},params={})=>{if(options.loading){const loadingTargets=update(options.loading,options.target,options.action);if(loadingTargets.length)options.target=loadingTargets;}const fd=params instanceof FormData,token=document.querySelector('meta[name="csrf-token"]')?.content;const path=new URL(url,window.location.href);const sameOrigin=path.origin===window.location.origin;const doFetch=(lastEventId)=>fetch(url,{method,headers:{Accept:"text/event-stream,text/vnd.turbo-stream.html,application/json,text/html",...(!fd&&method!=="GET"&&{"Content-Type":"application/json"}),...(sameOrigin&&token?{"X-CSRF-Token":token}:{}),...(lastEventId?{"Last-Event-ID":lastEventId}:{})},body:method==="GET"?null:(fd?params:JSON.stringify(params)),credentials:sameOrigin?"same-origin":"omit"}).then(res=>{const type=res.headers.get("content-type")||"";if(type.includes("event-stream"))return handleSSE(res,options,doFetch);return(type.includes("turbo-stream")?res.text().then(data=>({turbo:true,data})):type.includes("json")?res.json():res.text());}).then(data=>{if(data===undefined)return;return(data.turbo&&window.Turbo)?Turbo.renderStreamMessage(data.data):update(data,options.target,options.loading?(options.action||[]).map(a=>a&&"replace"):options.action,options.template)}).catch(e=>console.error("AJAX:",e.message));doFetch(null);};
+    const opts=o=>typeof o==="string"?{target:[o],action:[null]}:o;
+    const get=(url,options={})=>ajax(url,"GET",opts(options));
+    const[post,put,patch,del]=["POST","PUT","PATCH","DELETE"].map(method=>(url,params,options={})=>ajax(url,method,opts(options),params));
+    const applyingBindings=new Set();
+    const safeApplyBinding=(b)=>{if(applyingBindings.has(b))return;applyingBindings.add(b);try{applyBinding(b);}finally{applyingBindings.delete(b);}};
+    const handler={has(t,p){if(Reflect.has(t,p))return true;if(typeof p==='string'&&p.startsWith('$'))return false;if(typeof globalThis[p]!=='undefined')return false;return true;},get(t,p,r){const v=Reflect.get(t,p,r);if(v&&typeof v==="object"){if(HELIUM.proxyCache.has(v))return HELIUM.proxyCache.get(v);const proxy=new Proxy(v,handler);HELIUM.proxyCache.set(v,proxy);HELIUM.parentKeys.set(v,p);return proxy;}return v;},set:(t,p,v)=>{const res=Reflect.set(t,p,v);HELIUM.bindings.get(p)?.forEach(safeApplyBinding);const parentKey=HELIUM.parentKeys.get(t);if(parentKey)HELIUM.bindings.get(parentKey)?.forEach(safeApplyBinding);HELIUM.bindings.get(ALL)?.forEach(safeApplyBinding);return res}};
+    const state=new Proxy({},handler);
+    Object.assign(state,initialState);
+    const getRefsObject=()=>{const refs={};for(const[name,element]of HELIUM.refs){refs[name]=element;}return refs;};
+    const createScope=(el,event={})=>engine.createScope({$,state,event,el,html,get,post,put,patch,del,refs:getRefsObject()});
+    const compile=(expr,withReturn=true)=>{const key=`${withReturn}:${expr}`;if(HELIUM.fnCache.has(key))return HELIUM.fnCache.get(key);const compiled=engine.compile(expr,withReturn);HELIUM.fnCache.set(key,compiled);return compiled;};
+    function applyBinding(b,e={},elCtx=b.el){const{el,prop,compiled,calc,isHiddenAttr,isRadio}=b;const scope=createScope(elCtx,e);const r=compiled.execute(scope);if(calc){console.log('[HELIUM] @calculate:', calc, '=', r);state[calc]=r;}if(prop==="innerHTML"){const content=Array.isArray(r)?r.join``:r;return typeof Idiomorph==="object"?Idiomorph.morph(el,content,{morphStyle:'innerHTML'}):el.innerHTML=content;}if(prop==="class"&&r&&typeof r==="object")return Object.entries(r).forEach(([k,v])=>k.split(/\s+/).forEach(c=>el.classList.toggle(c,v)));if(prop==="style"&&r&&typeof r==="object")return el.style.cssText=Object.entries(r).filter(([_,v])=>v!=null&&v!==false).map(([k,v])=>`${k}:${v}`).join("; ");if(prop==="hidden"){const newHidden=isHiddenAttr?!!r:!r;console.log('[HELIUM] Setting hidden:', newHidden, 'isHiddenAttr:', isHiddenAttr, 'r:', r);el.hidden=newHidden;return;}if(prop in el){if(isRadio&&prop!=="checked")el.checked=el.value===r;else if(el.type==="radio"&&prop!=="checked")el.checked=el.value===r;else el[prop]=prop==="textContent"?(r??''):parseEx(r);return;}el.setAttribute(prop,parseEx(r));}
+    const trackDependenciesProxy=(compiled,el,excludeChanged=false)=>{const accessed=excludeChanged?new Map():new Set();const trackProxy=new Proxy(state,{has(target,prop){return true;},get(target,prop){if(typeof prop=='string'){excludeChanged?!accessed.has(prop)&&accessed.set(prop,target[prop]):accessed.add(prop);}const val=target[prop];return typeof val=="object"&&val!=null?new Proxy(val,this):val;}});try{const scope=engine.createScope({$,state:trackProxy,event:{},el,html,get,post,put,patch,del,refs:getRefsObject()});compiled.execute(scope);}catch{}return excludeChanged?[...accessed.keys()].filter(prop=>state[prop]===accessed.get(prop)):[...accessed];};
+    const getDependencies=(compiled,el,excludeChanged=false)=>{if(compiled.getIds&&!excludeChanged){return compiled.getIds([]);}return trackDependenciesProxy(compiled,el,excludeChanged);};
+    const cleanup=el=>{[el,...el.querySelectorAll('*')].forEach(e=>{HELIUM.listeners.get(e)?.forEach(({receiver,event,handler})=>receiver.removeEventListener(event,handler));HELIUM.listeners.delete(e);});};
+    async function processElements(element){const newBindings=[];const deferredBindings=[];const heElements=[element,...element.querySelectorAll("*")].filter(e=>{if(HELIUM.processed.has(e))return false;for(let i=0;i<e.attributes.length;i++){if(ATTR_REGEX.test(e.attributes[i].name))return true;}return false;});console.log('[HELIUM] Found', heElements.length, 'elements to process');const addBinding=(val,b)=>{HELIUM.bindings.set(val,b.calc?[b,...(HELIUM.bindings.get(val)||[])]:[...(HELIUM.bindings.get(val)||[]),b]);b.calc?newBindings.unshift(b):newBindings.push(b);};const importPromises=[];heElements.forEach((el)=>{const importAttr=el.getAttribute("@import")||el.getAttribute(`data-${prefix}-import`);if(importAttr){importAttr.split(",").map((m)=>m.trim()).forEach((moduleName)=>{const isUrl=moduleName.startsWith("http://")||moduleName.startsWith("https://");const hasExtension=moduleName.endsWith(".js");const hasPathPrefix=moduleName.startsWith("/")||moduleName.startsWith("./")||moduleName.startsWith("../");const path=(isUrl||hasPathPrefix?"":"./")+moduleName+(isUrl||hasExtension?"":".js");importPromises.push(import(path).then((module)=>{Object.keys(module).forEach((key)=>(state[key]=module[key]),);}).catch((error)=>{console.error(`Failed to import module: ${path}`,error.message);}),);});}});if(importPromises.length>0)await Promise.all(importPromises);heElements.forEach(el=>{HELIUM.processed.add(el);const attrs=el.attributes;const execExpr=v=>{const compiled=compile(v,true);const scope=createScope(el);return compiled.execute(scope);};const inputType=el.type?.toLowerCase();const isCheckbox=inputType=="checkbox",isRadio=inputType=="radio",isSelect=el.tagName=="SELECT";for(let i=0;i<attrs.length;i++){const{name,value}=attrs[i];if(!name.startsWith('@')&&!name.startsWith(':')&&!name.startsWith(`data-${prefix}`))continue;if(match(name,"text","html","bind")&&isValidIdentifier(value)&&!RESERVED.has(value)&&!(value in state)){state[value]=match(name,"bind")?(el.type=="checkbox"?el.checked:tryNum(el.value)):tryNum(el.textContent);}if(name==="@data"||name===`data-${prefix}`){const parsed=parseEx(value);console.log('[HELIUM] @data parsed:', parsed);Object.assign(state,parsed);}else if(name.startsWith(":")||name.startsWith(`data-${prefix}-attr:`)){const propName=name.startsWith(":")?name.slice(1):name.slice(prefix.length+11);deferredBindings.push({el,prop:propName,compiled:compile(value,true)});}else if(match(name,"ref")){HELIUM.refs.set("$"+value,el);state["$"+value]=el;}else if(match(name,"text","html")){deferredBindings.push({el,prop:match(name,"text")?"textContent":"innerHTML",compiled:compile(value,true)});}else if(match(name,"bind")){const event=(isCheckbox||isRadio||isSelect)?"change":"input";const prop=isCheckbox?"checked":"value";const inputHandler=e=>state[value]=isCheckbox?e.target.checked:e.target.value;el.addEventListener(event,inputHandler);if(!HELIUM.listeners.has(el))HELIUM.listeners.set(el,[]);HELIUM.listeners.get(el).push({receiver:el,event,handler:inputHandler});deferredBindings.push({el,prop,compiled:compile(value,true),isRadio});if(isCheckbox)el.checked=!!state[value];else if(isRadio)el.checked=el.value==state[value];else el.value=state[value]??"";}else if(match(name,"hidden","visible")){const isHidden=match(name,"hidden");deferredBindings.push({el,prop:"hidden",compiled:compile(value,true),isHiddenAttr:isHidden});}else if(match(name,"calculate")){const calcName=name.split(":")[1];if(!(calcName in state))state[calcName]=undefined;deferredBindings.push({el,calc:calcName,prop:null,compiled:compile(value,true)});}else if(match(name,"effect")){deferredBindings.push({el,prop:null,compiled:compile(value,true),keys:name.split(":").slice(1)});}else if(match(name,"init")){inits.push({compiled:compile(value,true),el});}else if(name.startsWith("@")||name.startsWith(`data-${prefix}`)){const fullName=name.startsWith("@")?name.slice(1):name.slice(prefix.length+6);const[eventName,...mods]=fullName.split(".");const isHttpMethod=["get","post","put","patch","delete"].includes(eventName);const event=isHttpMethod?getEvent(el):eventName;const receiver=mods.includes("outside")||mods.includes("document")?document:el;const debounceMod=mods.find(m=>m.startsWith("debounce"));const debounceDelay=debounceMod?(t=>t&&!isNaN(t)?Number(t):300)(debounceMod.split(":")[1]):0;const _handler=e=>{if(mods.includes("prevent"))e.preventDefault();if(mods.includes("stop"))e.stopPropagation();for(const[mod,prop]of Object.entries(KEY_MODS))if(mods.includes(mod)&&!e[prop])return;if(["keydown","keyup","keypress"].includes(event)){const last=mods[mods.length-1];if(last&&!["prevent","once","outside","document","stop"].includes(last)&&!last.startsWith("debounce")&&!Object.keys(KEY_MODS).includes(last)){const keyName=e.key==" "?"Space":e.key=="Escape"?"Esc":e.key;if(keyName.toLowerCase()!==last.toLowerCase())return;}}if(!mods.includes("outside")||!el.contains(e.target)){if(isHttpMethod){const getAttr=name=>el.getAttribute(`data-${prefix}-${name}`)||el.getAttribute(`@${name}`);const pairs=(getAttr('target')||"").split(",").map(p=>p.split(":").map(s=>s.trim()));const target=pairs.map(([target])=>target);const action=pairs.map(([,action])=>action);const options={...(getAttr("options")&&parseEx(getAttr("options")||"{}")),...(target&&{target}),...(action&&{action}),...(getAttr("template")&&{template:execExpr(getAttr("template")),}),...(getAttr("loading")&&{loading:execExpr(getAttr("loading"))}),};let paramsAttr=getAttr("params");if(!paramsAttr&&el.hasAttribute("name")){const keys=el.getAttribute("name").match(/\w+/g).map(key=>`${key}:`).join``;paramsAttr=keys+(isCheckbox?"checked":"value");}else paramsAttr||="{}";if(!paramsAttr.trim().startsWith("{")&&paramsAttr.includes(":")){const props=paramsAttr.split(":").map(s=>s.trim());paramsAttr=props.reduceRight((acc,key,i)=>`{ ${key}: ${i==1?`'${el[acc]}'`:acc} }`);}const scope=createScope(el,e);const paramsCompiled=compile(paramsAttr,true);const params=paramsCompiled.execute(scope);ajax(value,eventName.toUpperCase(),options,params);}else{const scope=createScope(el,e);const compiled=compile(value,true);compiled.execute(scope);}}if(mods.includes("once"))receiver.removeEventListener(event,handler);};const handler=debounceDelay>0?debounce(_handler,debounceDelay):_handler;const eventOptions=mods.includes("once")?{once:true}:undefined;receiver.addEventListener(event,handler,eventOptions);if(!HELIUM.listeners.has(el))HELIUM.listeners.set(el,[]);HELIUM.listeners.get(el).push({receiver,event,handler});}}});deferredBindings.forEach(b=>{const tracked=b.keys?.includes("*")?[ALL]:getDependencies(b.compiled,b.el,true).concat(b.keys||[]);console.log('[HELIUM] Deferred binding tracked deps:', tracked, 'calc:', b.calc, 'prop:', b.prop);tracked.forEach(key=>addBinding(key,b));if(tracked.length===0){newBindings.push(b);}});console.log('[HELIUM] processElements returning', newBindings.length, 'bindings');return newBindings;}
+    HELIUM.observer?.disconnect();
+    HELIUM.observer=new MutationObserver(async(ms)=>{for(const m of ms){m.removedNodes.forEach((n)=>n.nodeType===1&&cleanup(n));for(const n of m.addedNodes){if(n.nodeType===1&&!HELIUM.processed.has(n)){const bindings=await processElements(n);bindings?.forEach(applyBinding);}}}});
+    HELIUM.observer.observe(root,{childList:true,subtree:true});
+    const initialBindings=await processElements(root);
+    console.log('[HELIUM] Initial bindings count:', initialBindings.length);
+    initialBindings.forEach((b,i) => {
+      console.log('[HELIUM] Applying binding', i, 'prop:', b.prop, 'calc:', b.calc);
+      try { applyBinding(b); } catch(e) { console.error('[HELIUM] Binding error:', e); }
+    });
+    inits.forEach(({compiled,el})=>{const scope=createScope(el);compiled.execute(scope);});
+    return state;
+  }
+  function heliumTeardown(){if(HELIUM?.observer)HELIUM.observer.disconnect();HELIUM=null;}
+  return{helium,heliumTeardown};
+}
+const{helium:defaultHelium,heliumTeardown:defaultTeardown}=createHelium();
+window.helium=defaultHelium;
+window.heliumTeardown=defaultTeardown;
+document.addEventListener("DOMContentLoaded",()=>defaultHelium());
+})();
+</script>
+
+</body>
+</html>
