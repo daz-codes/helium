@@ -229,6 +229,59 @@ describe('Helium Reactive Library', () => {
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').textContent).toBe('Changed');
     });
+
+    it('should make refs available in @params for AJAX requests', async () => {
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        headers: { get: () => 'application/json' },
+        json: async () => ({ success: true })
+      });
+
+      container.innerHTML = `
+        <form @ref="myForm">
+          <input name="title" value="Test Title">
+          <button @post="/api/test" @params="new FormData($myForm)">Submit</button>
+        </form>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(r => setTimeout(r, 100));
+
+      expect(global.fetch).toHaveBeenCalled();
+      const [url, options] = global.fetch.mock.calls[0];
+      expect(url).toBe('/api/test');
+      expect(options.body).toBeInstanceOf(FormData);
+    });
+
+    it('should make refs available with nested @data sections', async () => {
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        headers: { get: () => 'application/json' },
+        json: async () => ({ success: true })
+      });
+
+      // Mimic the examples page structure with nested @data
+      container.innerHTML = `
+        <div @data="{ count: 0 }">
+          <div @data="{ templates: { post: data => data.title } }">
+            <section @ref="posts">
+              <form @ref="form">
+                <input name="title" value="Test">
+                <button @post.prevent="/api/posts" @params="new FormData($form)" @target="$posts:append" @template="templates.post">Submit</button>
+              </form>
+            </section>
+          </div>
+        </div>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(r => setTimeout(r, 100));
+
+      expect(global.fetch).toHaveBeenCalled();
+      const [url, options] = global.fetch.mock.calls[0];
+      expect(url).toBe('/api/posts');
+      expect(options.body).toBeInstanceOf(FormData);
+    });
   });
 
   describe('@init Directive', () => {
@@ -563,6 +616,69 @@ describe('Helium Reactive Library', () => {
       expect(mutationCount).toBeLessThan(10); // Should not cause excessive mutations
       observer.disconnect();
     });
+  });
+});
+
+describe(':style Directive', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+  });
+
+  it('should apply style object with camelCase properties', async () => {
+    container.innerHTML = '<div :style="{ backgroundColor: color }"></div>';
+    await helium({ color: 'blue' });
+    const div = container.querySelector('div');
+    expect(div.style.backgroundColor).toBe('blue');
+  });
+
+  it('should apply style object with kebab-case properties', async () => {
+    container.innerHTML = '<div :style="{ \'background-color\': color }"></div>';
+    await helium({ color: 'red' });
+    const div = container.querySelector('div');
+    expect(div.style.backgroundColor).toBe('red');
+  });
+
+  it('should apply multiple style properties', async () => {
+    container.innerHTML = '<div :style="{ backgroundColor: bg, fontSize: size }"></div>';
+    await helium({ bg: 'green', size: '20px' });
+    const div = container.querySelector('div');
+    expect(div.style.backgroundColor).toBe('green');
+    expect(div.style.fontSize).toBe('20px');
+  });
+
+  it('should update style when state changes', async () => {
+    container.innerHTML = '<div :style="{ backgroundColor: color }"></div>';
+    const state = await helium({ color: 'blue' });
+    const div = container.querySelector('div');
+    expect(div.style.backgroundColor).toBe('blue');
+
+    state.color = 'red';
+    await new Promise(r => setTimeout(r, 0));
+    expect(div.style.backgroundColor).toBe('red');
+  });
+
+  it('should filter out null and false values', async () => {
+    container.innerHTML = '<div :style="{ backgroundColor: bg, color: textColor }"></div>';
+    await helium({ bg: 'blue', textColor: null });
+    const div = container.querySelector('div');
+    expect(div.style.backgroundColor).toBe('blue');
+    expect(div.style.color).toBe('');
+  });
+
+  it('should handle width with percentage', async () => {
+    container.innerHTML = '<div :style="{ width: width + \'%\' }"></div>';
+    await helium({ width: 50 });
+    const div = container.querySelector('div');
+    expect(div.style.width).toBe('50%');
   });
 });
 

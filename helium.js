@@ -198,10 +198,11 @@ export function createHelium(options = {}) {
 
   const handler = {
       // 'has' trap needed for 'with' statement - it uses 'in' operator to check property existence
-      // Return false for $-prefixed names and globals so they fall through to outer/global scope
+      // Return false for $-prefixed names so they fall through to outer scope
+      // (where $el, $event, $html, and refs like $form are defined without proxy wrapping)
       has(t, p) {
-        if (Reflect.has(t, p)) return true;
         if (typeof p === 'string' && p.startsWith('$')) return false;
+        if (Reflect.has(t, p)) return true;
         if (typeof globalThis[p] !== 'undefined') return false;  // Allow globals like Date, Math, Array, console
         return true;
       },
@@ -288,7 +289,7 @@ export function createHelium(options = {}) {
     if (prop==="style" && r && typeof r==="object")
     return el.style.cssText = Object.entries(r)
       .filter(([_, v]) => v != null && v !== false)
-      .map(([k, v]) => `${k}:${v}`)
+      .map(([k, v]) => `${k.replace(/[A-Z]/g, m => '-' + m.toLowerCase())}:${v}`)
       .join("; ");
 
     if (prop === "hidden") {
@@ -447,7 +448,6 @@ export function createHelium(options = {}) {
           }
           else if (match(name, "ref")) {
             HELIUM.refs.set("$" + value, el);
-            state["$" + value] = el;  // Also add to state so expressions can access it
           }
           else if (match(name, "text", "html")) {
             deferredBindings.push({el, prop: match(name, "text") ? "textContent" : "innerHTML", compiled: compile(value, true)});
