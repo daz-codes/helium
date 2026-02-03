@@ -389,11 +389,14 @@ export function createHelium(options = {}) {
         const importAttr = el.getAttribute("@import") || el.getAttribute(`data-${prefix}-import`);
         if (importAttr) {
           importAttr.split(",").map((m) => m.trim()).forEach((moduleName) => {
-              // Build path: use as-is for URLs, otherwise add ./ prefix and .js suffix as needed
+              // Build path: use as-is for URLs, otherwise resolve relative to document location
               const isUrl = moduleName.startsWith("http://") || moduleName.startsWith("https://");
               const hasExtension = moduleName.endsWith(".js");
               const hasPathPrefix = moduleName.startsWith("/") || moduleName.startsWith("./") || moduleName.startsWith("../");
-              const path = (isUrl || hasPathPrefix ? "" : "./") + moduleName + (isUrl || hasExtension ? "" : ".js");
+              const relativePath = (isUrl || hasPathPrefix ? "" : "./") + moduleName + (isUrl || hasExtension ? "" : ".js");
+              // Ensure base URL ends with / so relative paths resolve correctly
+              const baseUrl = location.href.endsWith('/') || location.href.includes('.html') ? location.href : location.href + '/';
+              const path = isUrl ? relativePath : new URL(relativePath, baseUrl).href;
               importPromises.push(
                 import(path)
                   .then((module) => {
@@ -434,7 +437,7 @@ export function createHelium(options = {}) {
           if (!name.startsWith('@') && !name.startsWith(':') && !name.startsWith(`data-${prefix}`)) continue;
 
           // Initialize state first if needed (skip reserved words, only if not already set)
-          if (match(name, "text", "html", "bind") && isValidIdentifier(value) && !RESERVED.has(value) && !(value in state)) {
+          if (match(name, "text", "html", "bind") && isValidIdentifier(value) && !RESERVED.has(value) && state[value] == null) {
             state[value] = match(name, "bind") ? (el.type == "checkbox" ? el.checked : tryNum(el.value)) : tryNum(el.textContent);
           }
 
@@ -587,7 +590,16 @@ export function createHelium(options = {}) {
 }
 
 // Create default instance for backwards compatibility
-const { helium: defaultHelium, heliumTeardown: defaultTeardown } = createHelium();
+const { helium: defaultHelium, heliumTeardown: _defaultTeardown } = createHelium();
+
+// Flag to disable default auto-init (used by helium-csp.js and other variants)
+let defaultDisabled = false;
+
+// Wrapped teardown that also prevents future auto-init
+function defaultTeardown() {
+  defaultDisabled = true;
+  _defaultTeardown();
+}
 
 // Setup browser globals and auto-initialization
 if (typeof window !== 'undefined') {
@@ -597,11 +609,11 @@ if (typeof window !== 'undefined') {
 
 // Initialize on load
 if (typeof document !== 'undefined') {
-  document.addEventListener("DOMContentLoaded",_ => defaultHelium());
+  document.addEventListener("DOMContentLoaded",_ => !defaultDisabled && defaultHelium());
   // Turbo integration
   document.addEventListener("turbo:before-render",_ => defaultTeardown());
-  document.addEventListener("turbo:render",_ => defaultHelium());
+  document.addEventListener("turbo:render",_ => !defaultDisabled && defaultHelium());
 }
 
-export { createHelium };
+export { defaultTeardown };
 export default defaultHelium;

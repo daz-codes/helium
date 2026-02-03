@@ -1,8 +1,13 @@
 {
   "name": "@daz4126/helium",
-  "version": "0.31.0",
+  "version": "0.32.0-beta.1",
   "main": "helium.js",
   "type": "module",
+  "exports": {
+    ".": "./helium.js",
+    "./lite": "./helium-lite.js",
+    "./csp": "./helium-csp.js"
+  },
   "scripts": {
     "test": "vitest",
     "test:ui": "vitest --ui",

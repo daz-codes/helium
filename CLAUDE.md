@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Helium is an ultra-light (~3KB minified/gzipped) reactive library that makes HTML interactive using declarative attributes. It requires no build step and works directly in the browser.
+Helium is an ultra-light (~5KB minified/gzipped) reactive library that makes HTML interactive using declarative attributes. It requires no build step and works directly in the browser.
 
 ## Commands
 

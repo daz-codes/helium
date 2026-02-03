@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helium CSP Test</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline';">
+</head>
+<body data-helium>
+    <div>
+        <h1 @text="message"></h1>
+        <button @click="message = 'Clicked!'">Click me</button>
+        <button @click="count++">Count: <span @text="count"></span></button>
+        <div @text="'Timer: ' + timer"></div>
+        <input @bind="message" placeholder="Type message">
+        
+        <hr>
+        
+        <h2>CSP Features</h2>
+        <div @text="'Template literal test: ' + \`Count is \${count}\`"></div>
+        <div @text="'Complex expr: ' + (count > 5 ? 'High' : 'Low')"></div>
+        <button @click="calculate()">Test Calculation</button>
+        <div @text="calcResult"></div>
+    </div>
+
+    <script type="module">
+        import helium from './helium-csp.js';
+        
+        // Test that CSP-safe reactivity works
+        const state = await helium({
+            message: 'Hello from helium-csp!',
+            count: 0,
+            timer: 0,
+            calcResult: 'Not calculated'
+        });
+
+        state.calculate = function() {
+            // Test that calculations work without new Function
+            this.calcResult = `Square of ${this.count} = ${this.count * this.count}`;
+        };
+
+        // Test timer to verify reactivity
+        setInterval(() => {
+            state.timer = new Date().getSeconds();
+        }, 1000);
+
+        console.log('Helium CSP loaded successfully!', state);
+    </script>
+</body>
+</html>

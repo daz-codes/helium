@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Helium Examples</title>
+  <title>Helium Lite Examples</title>
   <style>
     * { box-sizing: border-box; }
 
@@ -155,45 +155,6 @@
       border-radius: 6px;
     }
 
-    .response {
-      padding: 1rem;
-      border-radius: 6px;
-      margin-top: 0.5rem;
-    }
-
-    .response.blue { background: #e3f2fd; }
-    .response.red { background: #ffebee; }
-
-    .form label {
-      display: block;
-      margin-bottom: 0.5rem;
-    }
-
-    .form label span {
-      display: block;
-      font-weight: 500;
-      margin-bottom: 0.25rem;
-    }
-
-    .post {
-      background: #f0f0f0;
-      padding: 1rem;
-      border-radius: 6px;
-      margin-top: 0.5rem;
-    }
-
-    .post h1 {
-      font-size: 1.1rem;
-      color: #333;
-      margin: 0 0 0.5rem 0;
-      text-align: left;
-    }
-
-    .post p {
-      margin: 0;
-      color: #666;
-    }
-
     .emoji-picker {
       display: flex;
       gap: 0.5rem;
@@ -221,7 +182,7 @@
 <body>
 
 <div class="page" data-helium @data="{ count: 0 }">
-  <h1>Helium Examples</h1>
+  <h1>Helium Lite Examples</h1>
 
   <div class="examples">
 
@@ -398,19 +359,6 @@
       </p>
     </div>
 
-    <!-- Password Strength (uses @import) -->
-    <div class="card" @data="{ password: '' }" @import="password-utils">
-      <h2>Password Strength</h2>
-      <input type="password" @bind="password" placeholder="Enter password">
-      <span @calculate:result="checkStrength(password)"></span>
-      <span @calculate:tips="getPasswordTips(password)"></span>
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: result.percent + '%', background: strengthColor(result.label) }"></div>
-      </div>
-      <p>Strength: <b @text="result.label"></b></p>
-      <p style="font-size: 0.85rem; color: #666;" @text="tips.join(' • ')"></p>
-    </div>
-
     <!-- Init Example -->
     <div class="card" @data="{ loadTime: '' }">
       <h2>Init Example</h2>
@@ -431,56 +379,9 @@
     </div>
 
   </div>
-
-<!-- AJAX Examples Section -->
-<div class="page" style="margin-top: 2rem;" @data="{
-  templates: {
-    post: data => `<section class='post'><h1>${data?.title || 'Loading...'}</h1><p>${data?.body || ''}</p></section>`
-  }
-}">
-  <h1>AJAX Examples</h1>
-
-  <div class="examples">
-
-    <!-- HTML Response -->
-    <section class="card">
-      <h2>HTML Response</h2>
-      <div id="table"><p>Click to fetch an HTML table from the server.</p></div>
-      <button @get.once="https://html-mock.fly.dev/tag/table" @target="#table" @loading="<p>Loading table...</p>">Get HTML Table</button>
-    </section>
-
-    <!-- Request Methods -->
-    <section class="card">
-      <h2>Request Methods</h2>
-      <p>PUT adds to account, DELETE (shift+click) removes.</p>
-      <div class="button-group">
-        <button @put="https://html-mock.fly.dev/tag/paragraph" @loading="<span>Adding...</span>" @params="{cash: 100}" @target="put_response">PUT - Add Funds</button>
-        <button @delete.shift="https://html-mock.fly.dev/tag/paragraph" @params="{account: 1}" @target="delete_response">DELETE (Shift+Click)</button>
-      </div>
-      <div @html="put_response" class="response blue">PUT response will appear here</div>
-      <div @html="delete_response" class="response red">DELETE response will appear here</div>
-    </section>
-
-    <!-- Posts with JSON -->
-    <section @ref="posts" class="card">
-      <h2>Posts (JSON + Template)</h2>
-      <p>Fetch posts and render them using a template function.</p>
-      <form @ref="form" class="form">
-        <label><span>Title:</span><input type="hidden" name="userId" value="5"><input name="title" placeholder="Post title"></label>
-        <label><span>Body:</span><textarea name="body" rows="2" placeholder="Post content"></textarea></label>
-        <button @post.prevent="https://dummyjson.com/posts/add" @params="new FormData($form)" @target="$posts:append" @template="templates.post" @loading="templates.post({title: 'Saving...', body: 'Please wait'})">Create Post</button>
-      </form>
-      <div class="button-group" style="margin-top: 1rem;">
-        <button @get.debounce:500="https://dummyjson.com/posts/1" @target="$posts:append" @template="templates.post" @loading="<p>Loading post...</p>">Get Post #1</button>
-        <button @get.debounce:500="https://dummyjson.com/posts/2" @target="$posts:append" @template="templates.post" @loading="<p>Loading post...</p>">Get Post #2</button>
-      </div>
-    </section>
-
-  </div>
-</div>
 </div>
 
-<script type="module" src="../helium-csp.js"></script>
+<script type="module" src="../helium-lite.js"></script>
 
 </body>
 </html>
