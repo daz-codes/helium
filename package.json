@@ -1,6 +1,6 @@
 {
   "name": "@daz4126/helium",
-  "version": "0.32.0-beta.1",
+  "version": "1.0.0-beta.1",
   "main": "helium.js",
   "type": "module",
   "exports": {
