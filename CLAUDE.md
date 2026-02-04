@@ -105,9 +105,7 @@ const { helium, heliumTeardown } = createHelium({
     createScope(ctx) {
       // Return scope object for expression execution
     }
-  },
-  prefix: 'my',      // For data-my-* attributes
-  rootAttr: 'mylib'  // For @mylib / data-mylib root element
+  }
 });
 ```
 

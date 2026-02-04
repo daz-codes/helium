@@ -513,7 +513,7 @@ export function createHelium(options = {}) {
               }
               if (!mods.includes("outside") || !el.contains(e.target)) {
                 if (isHttpMethod) {
-                  const getAttr = a => el.getAttribute('data-he-' + a) || el.getAttribute('@' + a);
+                  const getAttr = name => el.getAttribute(`data-${prefix}-${name}`) || el.getAttribute(`@${name}`);
                   const pairs = (getAttr('target') || "").split(",").map(p => p.split(":").map(s => s.trim()));
                   const target = pairs.map(([target]) => target);
                   const action = pairs.map(([, action]) => action);

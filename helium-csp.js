@@ -221,12 +221,8 @@ const jexprEngine = {
   }
 };
 
-// Create helium with jexpr engine and he-* prefixes
-const { helium, heliumTeardown } = createHelium({
-  engine: jexprEngine,
-  prefix: 'he',
-  rootAttr: 'helium'
-});
+// Create helium with jexpr engine (CSP-safe)
+const { helium, heliumTeardown } = createHelium({ engine: jexprEngine });
 
 // Evaluate helper for testing
 const evaluate = (expr, scope) => {

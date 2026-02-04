@@ -492,8 +492,8 @@ export function createHelium(options = {}) {
           else if (match(name, "init")) {
             inits.push({ compiled: compile(value, true), el });
           }
-          else if (name.startsWith("@") || name.startsWith('data-he')) {
-            const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
+          else if (name.startsWith("@") || name.startsWith(`data-${prefix}`)) {
+            const fullName = name.startsWith("@") ? name.slice(1) : name.slice(prefix.length + 6);
             const [eventName, ...mods] = fullName.split(".");
             const isHttpMethod = ["get", "post", "put", "patch", "delete"].includes(eventName);
             const event = isHttpMethod ? getEvent(el) : eventName;
@@ -513,7 +513,7 @@ export function createHelium(options = {}) {
               }
               if (!mods.includes("outside") || !el.contains(e.target)) {
                 if (isHttpMethod) {
-                  const getAttr = a => el.getAttribute('data-he-' + a) || el.getAttribute('@' + a);
+                  const getAttr = name => el.getAttribute(`data-${prefix}-${name}`) || el.getAttribute(`@${name}`);
                   const pairs = (getAttr('target') || "").split(",").map(p => p.split(":").map(s => s.trim()));
                   const target = pairs.map(([target]) => target);
                   const action = pairs.map(([, action]) => action);
