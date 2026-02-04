@@ -225,6 +225,12 @@
 
   <div class="examples">
 
+  <!-- @data Test -->
+    <div class="card" data-he="{ word: 'Hello',number: 42 }">
+      <h2 data-he-text="word"></h2>
+      <p>Number: <b @text="number"></b></p>
+    </div>
+
     <!-- Counter -->
     <div class="card">
       <h2>Counter</h2>
@@ -430,12 +436,21 @@
       <p>History: <span @text="history.join(', ') || 'None yet'">None yet</span></p>
     </div>
 
+    <!-- Clipboard Copy -->
+    <div class="card" @data="{ copied: false, textToCopy: 'Hello from Helium!' }">
+      <h2>Copy to Clipboard</h2>
+      <input @bind="textToCopy" placeholder="Text to copy">
+      <button @click="navigator.clipboard.writeText(textToCopy).then(() => { copied = true; setTimeout(() => copied = false, 2000) })">
+        <span @text="copied ? 'Copied!' : 'Copy'"></span>
+      </button>
+    </div>
+
   </div>
 
 <!-- AJAX Examples Section -->
 <div class="page" style="margin-top: 2rem;" @data="{
   templates: {
-    post: data => `<section class='post'><h1>${data?.title || 'Loading...'}</h1><p>${data?.body || ''}</p></section>`
+    post: data => `<section class='post'><h1>${data && data.title || 'Loading...'}</h1><p>${data && data.body || ''}</p></section>`
   }
 }">
   <h1>AJAX Examples</h1>

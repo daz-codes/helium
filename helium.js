@@ -52,6 +52,15 @@ export function createHelium(options = {}) {
   const prefix = options.prefix ?? 'he';           // 'he' or 'xe'
   const rootAttr = options.rootAttr ?? 'helium';   // 'helium' or 'xenon'
 
+  // Engine-aware expression parser (CSP-safe when using jexpr engine)
+  const evalExpr = v => {
+    try {
+      const compiled = engine.compile(v, true);
+      const scope = engine.createScope ? engine.createScope({ state: {}, el: null, event: {}, refs: {}, $: null, html: null, get: null, post: null, put: null, patch: null, del: null }) : {};
+      return compiled.execute(scope);
+    } catch { return v; }
+  };
+
   // Build prefix-aware regex and matcher
   const ATTR_REGEX = new RegExp(`^(@|:|data-${prefix})`);
 
@@ -68,6 +77,7 @@ export function createHelium(options = {}) {
     const inits = [];
     const ALL = Symbol("all");
     const root = document.querySelector(`[\\@${rootAttr}]`) || document.querySelector(`[data-${rootAttr}]`) || document.body;
+    const storageKey = root.getAttribute('@local-storage') || root.getAttribute(`data-${prefix}-local-storage`);
 
     // Initialize or reuse HELIUM object
     if (!HELIUM) {
@@ -225,12 +235,16 @@ export function createHelium(options = {}) {
         const parentKey = HELIUM.parentKeys.get(t);
         if (parentKey) HELIUM.bindings.get(parentKey)?.forEach(safeApplyBinding);
         HELIUM.bindings.get(ALL)?.forEach(safeApplyBinding);
+        if (storageKey) localStorage.setItem(storageKey, JSON.stringify(state));
         return res
       }
   };
 
     // Initialize state if it doesn't exist
     const state = new Proxy({}, handler);
+
+    // Load from localStorage if key exists
+    if (storageKey) try { Object.assign(state, JSON.parse(localStorage.getItem(storageKey))); } catch {}
 
     // Merge initial state
     Object.assign(state, initialState);
@@ -443,7 +457,7 @@ export function createHelium(options = {}) {
 
           // Process the attribute
           if (name === "@data" || name === `data-${prefix}`) {
-            Object.assign(state, parseEx(value));
+            Object.assign(state, evalExpr(value));
           }
           else if (name.startsWith(":") || name.startsWith(`data-${prefix}-attr:`)) {
             const propName = name.startsWith(":") ? name.slice(1) : name.slice(prefix.length + 11);
@@ -508,7 +522,7 @@ export function createHelium(options = {}) {
                   const target = pairs.map(([target]) => target);
                   const action = pairs.map(([, action]) => action);
                   const options = {
-                    ...(getAttr("options") && parseEx(getAttr("options") || "{}")),
+                    ...(getAttr("options") && evalExpr(getAttr("options") || "{}")),
                     ...(target && { target }),
                     ...(action && { action }),
                     ...(getAttr("template") && { template: execExpr(getAttr("template")),}),

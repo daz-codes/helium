@@ -25,6 +25,7 @@ async function helium(initialState = {}) {
   const inits = [];
   const ALL = Symbol("all");
   const root = document.querySelector('[\\@helium]') || document.querySelector('[data-helium]') || document.body;
+  const storageKey = root.getAttribute('@local-storage') || root.getAttribute('data-he-local-storage');
 
   if (!HELIUM) {
     HELIUM = {
@@ -78,11 +79,13 @@ async function helium(initialState = {}) {
       const parentKey = HELIUM.parentKeys.get(t);
       if (parentKey) HELIUM.bindings.get(parentKey)?.forEach(safeApplyBinding);
       HELIUM.bindings.get(ALL)?.forEach(safeApplyBinding);
+      if (storageKey) localStorage.setItem(storageKey, JSON.stringify(state));
       return res;
     }
   };
 
   const state = new Proxy({}, handler);
+  if (storageKey) try { Object.assign(state, JSON.parse(localStorage.getItem(storageKey))); } catch {}
   Object.assign(state, initialState);
 
   const getRefsObject = () => {

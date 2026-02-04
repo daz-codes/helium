@@ -378,6 +378,15 @@
       <p>History: <span @text="history.join(', ') || 'None yet'">None yet</span></p>
     </div>
 
+    <!-- Clipboard Copy -->
+    <div class="card" @data="{ copied: false, textToCopy: 'Hello from Helium!' }">
+      <h2>Copy to Clipboard</h2>
+      <input @bind="textToCopy" placeholder="Text to copy">
+      <button @click="navigator.clipboard.writeText(textToCopy).then(() => (copied = true, setTimeout(() => copied = false, 2000)))">
+        <span @text="copied ? 'Copied!' : 'Copy'"></span>
+      </button>
+    </div>
+
   </div>
 </div>
 

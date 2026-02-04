@@ -178,9 +178,21 @@ const jexprEngine = {
 
   createScope(ctx) {
     const locals = {
-      console,
-      Math,
-      Date,
+      // Browser globals
+      console, Math, Date, JSON,
+      navigator, window, document, location, history,
+      localStorage, sessionStorage,
+      setTimeout, setInterval, clearTimeout, clearInterval,
+      fetch, Promise, URL, URLSearchParams,
+      alert, confirm, prompt,
+      parseInt, parseFloat, isNaN, isFinite,
+      encodeURIComponent, decodeURIComponent, encodeURI, decodeURI,
+      atob, btoa,
+      // Observers (optional - may not exist in all environments)
+      ...(typeof IntersectionObserver !== 'undefined' && { IntersectionObserver }),
+      ...(typeof ResizeObserver !== 'undefined' && { ResizeObserver }),
+      ...(typeof MutationObserver !== 'undefined' && { MutationObserver }),
+      // Helium helpers
       $: ctx.$,
       $el: ctx.el,
       $event: ctx.event,
