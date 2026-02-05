@@ -220,16 +220,10 @@
 </head>
 <body>
 
-<div class="page" data-helium @data="{ count: 0 }">
+<div class="page" data-helium>
   <h1>Helium Examples</h1>
 
   <div class="examples">
-
-  <!-- @data Test -->
-    <div class="card" data-he="{ word: 'Hello',number: 42 }">
-      <h2 data-he-text="word"></h2>
-      <p>Number: <b @text="number"></b></p>
-    </div>
 
     <!-- Counter -->
     <div class="card">
@@ -328,7 +322,7 @@
     </div>
 
     <!-- Debounced Input -->
-    <div class="card" @data="{ search: '', debouncedSearch: '' }">
+    <div class="card">
       <h2>Debounced Input</h2>
       <p>Type and wait 500ms to see the debounced value update.</p>
       <input placeholder="Search..." @bind="search" @input.debounce:500="debouncedSearch = search">
@@ -340,13 +334,13 @@
     <div class="card" @data="{ tab: 'one' }">
       <h2>Tabs</h2>
       <div class="tabs">
-        <button class="tab" :class="{ active: tab === 'one' }" @click="tab = 'one'">Tab 1</button>
-        <button class="tab" :class="{ active: tab === 'two' }" @click="tab = 'two'">Tab 2</button>
-        <button class="tab" :class="{ active: tab === 'three' }" @click="tab = 'three'">Tab 3</button>
+        <button class="tab" :class="{ active: tab == 'one' }" @click="tab = 'one'">Tab 1</button>
+        <button class="tab" :class="{ active: tab == 'two' }" @click="tab = 'two'">Tab 2</button>
+        <button class="tab" :class="{ active: tab == 'three' }" @click="tab = 'three'">Tab 3</button>
       </div>
-      <div class="tab-content" @visible="tab === 'one'">Content for Tab 1</div>
-      <div class="tab-content" @visible="tab === 'two'">Content for Tab 2</div>
-      <div class="tab-content" @visible="tab === 'three'">Content for Tab 3</div>
+      <div class="tab-content" @visible="tab == 'one'">Content for Tab 1</div>
+      <div class="tab-content" @visible="tab == 'two'">Content for Tab 2</div>
+      <div class="tab-content" @visible="tab == 'three'">Content for Tab 3</div>
     </div>
 
     <!-- Element References -->
@@ -395,7 +389,7 @@
     </div>
 
     <!-- Character Counter -->
-    <div class="card" @data="{ text: '', maxLength: 100 }">
+    <div class="card" @data="{ maxLength: 100 }">
       <h2>Character Counter</h2>
       <textarea @bind="text" placeholder="Type something..." rows="3"></textarea>
       <span @calculate:remaining="maxLength - text.length"></span>
@@ -405,7 +399,7 @@
     </div>
 
     <!-- Password Strength (uses @import) -->
-    <div class="card" @data="{ password: '' }" @import="password-utils">
+    <div class="card" @import="https://codepen.io/daz4126/pen/xbOzGNO.js">
       <h2>Password Strength</h2>
       <input type="password" @bind="password" placeholder="Enter password">
       <span @calculate:result="checkStrength(password)"></span>
@@ -418,7 +412,7 @@
     </div>
 
     <!-- Init Example -->
-    <div class="card" @data="{ loadTime: '' }">
+    <div class="card">
       <h2>Init Example</h2>
       <p @init="loadTime = new Date().toLocaleTimeString()">
         Page loaded at: <b @text="loadTime"></b>
@@ -427,7 +421,7 @@
     </div>
 
     <!-- Effect Example -->
-    <div class="card" @data="{ clicks: 0, history: [] }">
+    <div class="card" @data="{ history: [] }">
       <h2>Effect (Side Effects)</h2>
       <p>Click the button and watch the history build up.</p>
       <button @click="clicks++">Click Me</button>
@@ -436,21 +430,12 @@
       <p>History: <span @text="history.join(', ') || 'None yet'">None yet</span></p>
     </div>
 
-    <!-- Clipboard Copy -->
-    <div class="card" @data="{ copied: false, textToCopy: 'Hello from Helium!' }">
-      <h2>Copy to Clipboard</h2>
-      <input @bind="textToCopy" placeholder="Text to copy">
-      <button @click="navigator.clipboard.writeText(textToCopy).then(() => { copied = true; setTimeout(() => copied = false, 2000) })">
-        <span @text="copied ? 'Copied!' : 'Copy'"></span>
-      </button>
-    </div>
-
   </div>
 
 <!-- AJAX Examples Section -->
 <div class="page" style="margin-top: 2rem;" @data="{
   templates: {
-    post: data => `<section class='post'><h1>${data && data.title || 'Loading...'}</h1><p>${data && data.body || ''}</p></section>`
+    post: data => `<section class='post'><h1>${data?.title || 'Loading...'}</h1><p>${data?.body || ''}</p></section>`
   }
 }">
   <h1>AJAX Examples</h1>

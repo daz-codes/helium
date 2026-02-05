@@ -244,15 +244,6 @@ export function createHelium(options = {}) {
     // Merge initial state
     Object.assign(state, initialState);
 
-    // Build refs object for scope
-    const getRefsObject = () => {
-      const refs = {};
-      for (const [name, element] of HELIUM.refs) {
-        refs[name] = element;
-      }
-      return refs;
-    };
-
     // Create scope for expression execution
     const createScope = (el, event = {}) => {
       return engine.createScope({
@@ -266,7 +257,7 @@ export function createHelium(options = {}) {
         put,
         patch,
         del,
-        refs: getRefsObject()
+        refs: Object.fromEntries(HELIUM.refs)
       });
     };
 
@@ -349,7 +340,7 @@ export function createHelium(options = {}) {
         put,
         patch,
         del,
-        refs: getRefsObject()
+        refs: Object.fromEntries(HELIUM.refs)
       });
       compiled.execute(scope);
     } catch {}
@@ -404,9 +395,7 @@ export function createHelium(options = {}) {
               const hasExtension = moduleName.endsWith(".js");
               const hasPathPrefix = moduleName.startsWith("/") || moduleName.startsWith("./") || moduleName.startsWith("../");
               const relativePath = (isUrl || hasPathPrefix ? "" : "./") + moduleName + (isUrl || hasExtension ? "" : ".js");
-              // Ensure base URL ends with / so relative paths resolve correctly
-              const baseUrl = location.href.endsWith('/') || location.href.includes('.html') ? location.href : location.href + '/';
-              const path = isUrl ? relativePath : new URL(relativePath, baseUrl).href;
+              const path = isUrl ? moduleName : new URL(relativePath, location.href).href;
               importPromises.push(
                 import(path)
                   .then((module) => {

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helium TodoMVC</title>
+  <link rel="stylesheet" href="todo.css">
+</head>
+<body>
+
+<section class="todoapp" data-helium @local-storage="helium-todos" @import="todo"
+  @data="{ todos: [], newTodo: '', filter: 'all', nextId: 1 }">
+
+  <span hidden @calculate:remaining="todos.filter(t => !t.completed).length"></span>
+  <span hidden @calculate:filtered="filter === 'all' ? todos : filter === 'active' ? todos.filter(t => !t.completed) : todos.filter(t => t.completed)"></span>
+
+  <header>
+    <h1>todos</h1>
+    <input class="new-todo" @bind="newTodo" @keydown.enter="addTodo($data)" placeholder="What needs to be done?" autofocus>
+  </header>
+
+  <section @visible="todos.length > 0">
+    <label class="toggle-all-container">
+      <input type="checkbox" @click="toggleAll($data)" :checked="todos.length > 0 && todos.every(t => t.completed)">
+      Mark all as complete
+    </label>
+    <ul class="todo-list" @html="renderTodos(filtered)"></ul>
+  </section>
+
+  <footer class="footer" @visible="todos.length > 0">
+    <span @text="remaining + (remaining === 1 ? ' item' : ' items') + ' left'"></span>
+    <nav class="filters">
+      <button :class="{ selected: filter === 'all' }" @click="filter = 'all'">All</button>
+      <button :class="{ selected: filter === 'active' }" @click="filter = 'active'">Active</button>
+      <button :class="{ selected: filter === 'completed' }" @click="filter = 'completed'">Completed</button>
+    </nav>
+    <button class="clear-completed" @click="clearCompleted($data)" @visible="todos.some(t => t.completed)">Clear completed</button>
+  </footer>
+
+</section>
+
+<p class="info">Built with <a href="https://github.com/daz-codes/helium">Helium</a></p>
+
+<script type="module" src="../helium.js"></script>
+</body>
+</html>
