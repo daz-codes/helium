@@ -11,7 +11,8 @@
       "Bash(npm install)",
       "Bash(npm link helium)",
       "Bash(ls:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "WebFetch(domain:codepen.io)"
     ]
   }
 }

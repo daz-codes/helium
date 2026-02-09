@@ -788,4 +788,83 @@ describe('@calculate', () => {
     await new Promise(r => setTimeout(r, 10));
     expect(container.querySelector('#result').textContent).toBe('Strong');
   });
+
+  describe('@local-storage', () => {
+    afterEach(() => {
+      localStorage.clear();
+    });
+
+    it('should not overwrite localStorage values with @data defaults', async () => {
+      // Simulate saved state from a previous session
+      localStorage.setItem('test-todos', JSON.stringify({ todos: ['buy milk', 'walk dog'], filter: 'active', nextId: 3 }));
+
+      container.setAttribute('data-he-local-storage', 'test-todos');
+      container.innerHTML = `
+        <div @data="{ todos: [], filter: 'all', nextId: 1 }">
+          <span id="count" @text="todos.length"></span>
+          <span id="filter" @text="filter"></span>
+          <span id="nextId" @text="nextId"></span>
+        </div>
+      `;
+      await helium();
+      await new Promise(r => setTimeout(r, 10));
+
+      // localStorage values should be preserved, not overwritten by @data defaults
+      expect(container.querySelector('#count').textContent).toBe('2');
+      expect(container.querySelector('#filter').textContent).toBe('active');
+      expect(container.querySelector('#nextId').textContent).toBe('3');
+    });
+
+    it('should set @data values that are not in localStorage', async () => {
+      // Saved state only has some keys
+      localStorage.setItem('test-partial', JSON.stringify({ count: 42 }));
+
+      container.setAttribute('data-he-local-storage', 'test-partial');
+      container.innerHTML = `
+        <div @data="{ count: 0, name: 'default' }">
+          <span id="count" @text="count"></span>
+          <span id="name" @text="name"></span>
+        </div>
+      `;
+      await helium();
+      await new Promise(r => setTimeout(r, 10));
+
+      // count should come from localStorage, name should come from @data
+      expect(container.querySelector('#count').textContent).toBe('42');
+      expect(container.querySelector('#name').textContent).toBe('default');
+    });
+
+    it('should save state changes to localStorage', async () => {
+      container.setAttribute('data-he-local-storage', 'test-save');
+      container.innerHTML = `
+        <div @data="{ count: 0 }">
+          <button @click="count++">Inc</button>
+          <span @text="count"></span>
+        </div>
+      `;
+      await helium();
+
+      container.querySelector('button').click();
+      await new Promise(r => setTimeout(r, 10));
+
+      const saved = JSON.parse(localStorage.getItem('test-save'));
+      expect(saved.count).toBe(1);
+    });
+
+    it('should preserve functions from @data when localStorage is active', async () => {
+      localStorage.setItem('test-funcs', JSON.stringify({ count: 5 }));
+
+      container.setAttribute('data-he-local-storage', 'test-funcs');
+      container.innerHTML = `
+        <div @data="{ count: 0, double(n) { return n * 2 } }">
+          <span id="result" @text="double(count)"></span>
+        </div>
+      `;
+      await helium();
+      await new Promise(r => setTimeout(r, 10));
+
+      // count from localStorage (5), function from @data
+      expect(container.querySelector('#result').textContent).toBe('10');
+    });
+  });
 });

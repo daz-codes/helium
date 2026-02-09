@@ -12,7 +12,7 @@ Here's a simple example of a button that counts the number of times it has been 
 
 It's really simple to use - just sprinkle the magic @attributes into your HTML and watch it come alive!
 
-[See more examples here](https://codepen.io/daz4126/pen/ogxGMX)
+[See more examples here](https://codepen.io/daz4126/pen/ogxGMX) | [TodoMVC Example](https://codepen.io/daz4126/pen/gbMjdZO)
 
 ## Why Helium?
 
@@ -20,8 +20,68 @@ Helium is designed for developers who want:
 
 - **Lightweight** - Just over 3KB minified and gzipped
 - **Powerful** - Declarative JavaScript in your HTML
-- **Zero build step** Works directly in the browser with no compiling
-- **Easy to learn** If you know HTML and basic JavaScript, you're ready
+- **Zero build step** - Works directly in the browser with no compiling
+- **Easy to learn** - If you know HTML and basic JavaScript, you're ready
+
+## Versions
+
+Helium comes in three versions so you can pick the right balance of features and size for your project:
+
+### Helium (Standard)
+
+The full-featured version with everything included.
+
+- All directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`, etc.)
+- Event handlers with modifiers
+- HTTP requests (`@get`, `@post`, `@put`, `@patch`, `@delete`)
+- Module imports (`@import`)
+- Server-Sent Events (SSE)
+- Turbo/Hotwire integration
+
+**Best for:** Most projects where you want the full power of Helium without worrying about CSP restrictions.
+
+```javascript
+import helium from "@daz4126/helium"
+```
+
+### Helium Lite
+
+A slimmed-down version with just the core reactivity features.
+
+- Core directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`)
+- Event handlers with modifiers
+- No HTTP requests, imports, SSE, or Turbo integration
+
+**Best for:** Simple interactive pages where you only need reactivity and don't need server communication or module imports.
+
+```javascript
+import helium from "@daz4126/helium/lite"
+```
+
+### Helium CSP
+
+A Content Security Policy safe version that doesn't require `unsafe-eval`. It uses [jexpr](https://github.com/nicolo-ribaudo/jexpr) as its expression engine instead of `new Function()`, while keeping the full feature set.
+
+- All the same features as the standard version
+- CSP-compliant — no `unsafe-eval` needed
+
+**Best for:** Projects with strict Content Security Policies that prohibit `unsafe-eval`.
+
+```javascript
+import helium from "@daz4126/helium/csp"
+```
+
+### Comparison
+
+| Feature | Standard | Lite | CSP |
+|---------|----------|------|-----|
+| Core directives | ✅ | ✅ | ✅ |
+| Event handlers | ✅ | ✅ | ✅ |
+| HTTP requests | ✅ | ❌ | ✅ |
+| `@import` | ✅ | ❌ | ✅ |
+| SSE | ✅ | ❌ | ✅ |
+| Turbo integration | ✅ | ❌ | ✅ |
+| CSP safe | ❌ | ❌ | ✅ |
 
 ## Installation
 
@@ -30,8 +90,19 @@ Helium is designed for developers who want:
 Just import from the CDN in a script tag directly in your HTML page:
 
 ```html
+<!-- Standard -->
 <script type="module">
   import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js';
+</script>
+
+<!-- Lite -->
+<script type="module">
+  import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium-lite.js';
+</script>
+
+<!-- CSP -->
+<script type="module">
+  import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium-csp.js';
 </script>
 ```
 
@@ -41,10 +112,12 @@ Just import from the CDN in a script tag directly in your HTML page:
 npm install @daz4126/helium
 ```
 
-Then include it in your JavaScript file and call the helium() function:
+Then import the version you need:
 
 ```javascript
-import helium from "@daz4126/helium"
+import helium from "@daz4126/helium"       // Standard
+import helium from "@daz4126/helium/lite"   // Lite
+import helium from "@daz4126/helium/csp"    // CSP
 ```
 
 ### Automatic Initialization

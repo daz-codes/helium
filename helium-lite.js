@@ -120,10 +120,6 @@ async function helium(initialState = {}) {
   };
 
   const state = new Proxy({}, handler);
-  if (storageKey)
-    try {
-      Object.assign(state, JSON.parse(localStorage.getItem(storageKey)));
-    } catch {}
   Object.assign(state, initialState);
 
   const createScope = (el, event = {}) => {
@@ -455,7 +451,11 @@ async function helium(initialState = {}) {
   });
   HELIUM.observer.observe(root, { childList: true, subtree: true });
 
+  // Read localStorage before processElements (which sets @data defaults and triggers saves via proxy)
+  const savedState = storageKey ? (() => { try { return JSON.parse(localStorage.getItem(storageKey)); } catch { return null; } })() : null;
   const initialBindings = await processElements(root);
+  // Merge saved values after @data defaults, so localStorage takes priority
+  if (savedState) Object.assign(state, savedState);
   initialBindings.forEach(applyBinding);
   inits.forEach(({ compiled, el }) => {
     const scope = createScope(el);
