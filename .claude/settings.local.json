@@ -12,7 +12,12 @@
       "Bash(npm link helium)",
       "Bash(ls:*)",
       "Bash(wc:*)",
-      "WebFetch(domain:codepen.io)"
+      "WebFetch(domain:codepen.io)",
+      "Bash(npx vitest *)",
+      "Bash(grep -n \"^##\\\\|^| \\\\`@\" README.md)",
+      "Read(//private/tmp/**)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"console.log\\('node', process.version\\)\")"
     ]
   }
 }

@@ -3,11 +3,11 @@
  * A variant of Helium that works without unsafe-eval
  */
 
-import { createHelium, defaultTeardown } from './helium.js';
+import { createHelium, disableDefault } from './helium.js';
 import { parse, EvalAstFactory } from './jexpr.js';
 
 // Disable the default helium instance from helium.js to prevent double-processing
-defaultTeardown();
+disableDefault();
 
 const astFactory = new EvalAstFactory();
 
@@ -116,6 +116,37 @@ const preprocessCommaOperator = (expr) => {
   return `[${parts.join(', ')}].pop()`;
 };
 
+// Apply source-to-source transforms only to executable code, never to quoted
+// string contents. This keeps values such as "C++", "x--", and "new Date"
+// byte-for-byte intact while still supporting those operators in expressions.
+const transformCodeSegments = (expr, transform) => {
+  let result = '';
+  let codeStart = 0;
+  let i = 0;
+
+  while (i < expr.length) {
+    const quote = expr[i];
+    if (quote !== "'" && quote !== '"') {
+      i++;
+      continue;
+    }
+
+    result += transform(expr.slice(codeStart, i));
+    const stringStart = i++;
+    while (i < expr.length) {
+      if (expr[i] === '\\') {
+        i += 2;
+        continue;
+      }
+      if (expr[i++] === quote) break;
+    }
+    result += expr.slice(stringStart, i);
+    codeStart = i;
+  }
+
+  return result + transform(expr.slice(codeStart));
+};
+
 // Pre-process expressions to handle ++ and -- operators
 // Transforms: count++ -> (count = count + 1) - 1  (returns old value)
 // Transforms: ++count -> (count = count + 1)      (returns new value)
@@ -129,15 +160,15 @@ const preprocess = (expr) => {
   expr = preprocessTemplateLiterals(expr);
   // Handle comma operator
   expr = preprocessCommaOperator(expr);
-  // Handle 'new' keyword for common constructors (jexpr doesn't support 'new')
-  expr = expr.replace(/\bnew\s+Date\b/g, '$Date');
-  expr = expr.replace(/\bnew\s+FormData\b/g, '$FormData');
-  // Then handle ++ and -- operators
-  return expr
+  // Handle constructors and ++/-- only in code segments. jexpr doesn't support
+  // these syntax forms directly, so they are lowered to supported expressions.
+  return transformCodeSegments(expr, code => code
+    .replace(/\bnew\s+Date\b/g, '$Date')
+    .replace(/\bnew\s+FormData\b/g, '$FormData')
     .replace(/(\$?\w+(?:\.\w+|\[\w+\])*)(\+\+)/g, '($1 = $1 + 1) - 1')
     .replace(/(\$?\w+(?:\.\w+|\[\w+\])*)(\-\-)/g, '($1 = $1 - 1) + 1')
     .replace(/\+\+(\$?\w+(?:\.\w+|\[\w+\])*)/g, '($1 = $1 + 1)')
-    .replace(/\-\-(\$?\w+(?:\.\w+|\[\w+\])*)/g, '($1 = $1 - 1)');
+    .replace(/\-\-(\$?\w+(?:\.\w+|\[\w+\])*)/g, '($1 = $1 - 1)'));
 };
 
 // Compile expression cache
@@ -222,7 +253,32 @@ const jexprEngine = {
 };
 
 // Create helium with jexpr engine (CSP-safe)
-const { helium, heliumTeardown } = createHelium({ engine: jexprEngine });
+const { helium: runHelium, heliumTeardown: runHeliumTeardown, mount: runMount } = createHelium({ engine: jexprEngine });
+let initialized = false;
+let autoTimer = null;
+
+const suppressAutoInit = () => {
+  initialized = true;
+  if (autoTimer !== null) clearTimeout(autoTimer);
+  autoTimer = null;
+};
+
+const helium = (initialState) => {
+  suppressAutoInit();
+  return runHelium(initialState);
+};
+
+const mount = (root, initialState) => {
+  suppressAutoInit();
+  return runMount(root, initialState);
+};
+
+helium.mount = mount;
+
+const heliumTeardown = () => {
+  suppressAutoInit();
+  runHeliumTeardown();
+};
 
 // Evaluate helper for testing
 const evaluate = (expr, scope) => {
@@ -238,9 +294,21 @@ if (typeof window !== 'undefined') {
 
 // Auto-initialize
 if (typeof document !== 'undefined') {
-  document.addEventListener("DOMContentLoaded", () => helium());
+  const autoInit = () => {
+    autoTimer = null;
+    if (!initialized) helium();
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", autoInit, { once: true });
+  } else {
+    // Imported after DOMContentLoaded already fired: init now.
+    autoTimer = setTimeout(autoInit, 0);
+  }
   // Turbo integration
-  document.addEventListener("turbo:before-render", () => heliumTeardown());
+  document.addEventListener("turbo:before-render", () => {
+    runHeliumTeardown();
+    initialized = false;
+  });
   document.addEventListener("turbo:render", () => helium());
 }
 

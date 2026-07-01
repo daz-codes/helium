@@ -15,12 +15,52 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
     document.body.innerHTML = '';
   });
 
+  describe('Explicit mounts', () => {
+    it('should support independent roots', async () => {
+      container.innerHTML = '<section id="a"><span @text="count"></span></section><section id="b"><span @text="count"></span></section>';
+      const a = await helium.mount('#a', { count: 1 });
+      const b = await helium.mount('#b', { count: 2 });
+
+      a.state.count = 3;
+      expect(container.querySelector('#a span').textContent).toBe('3');
+      expect(container.querySelector('#b span').textContent).toBe('2');
+
+      a.unmount();
+      b.unmount();
+    });
+  });
+
+  describe('Keyed @for', () => {
+    it('should preserve keyed row identity when reordering', async () => {
+      container.innerHTML = `
+        <template @for="item, index in items" :key="item.id">
+          <p :data-id="item.id" @text="index + ': ' + item.name"></p>
+        </template>
+      `;
+      const state = await helium({ items: [{ id: 1, name: 'One' }, { id: 2, name: 'Two' }] });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const first = container.querySelector('[data-id="1"]');
+
+      state.items = [state.items[1], state.items[0]];
+
+      expect(container.querySelectorAll('p')[1]).toBe(first);
+      expect([...container.querySelectorAll('p')].map(el => el.textContent)).toEqual(['0: Two', '1: One']);
+    });
+  });
+
   describe('Expression Parser', () => {
     it('should preprocess count++ to assignment', () => {
       expect(preprocess('count++')).toBe('(count = count + 1) - 1');
       expect(preprocess('++count')).toBe('(count = count + 1)');
       expect(preprocess('count--')).toBe('(count = count - 1) + 1');
       expect(preprocess('--count')).toBe('(count = count - 1)');
+    });
+
+    it('should not rewrite update operators or constructors inside strings', () => {
+      expect(preprocess('"C++"')).toBe('"C++"');
+      expect(preprocess('"x--"')).toBe('"x--"');
+      expect(preprocess('"new Date"')).toBe('"new Date"');
+      expect(evaluate('"C++"')).toBe('C++');
     });
 
     it('should evaluate simple expressions', () => {
@@ -103,6 +143,20 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       state.count = 10;
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').textContent).toBe('10');
+    });
+
+    it('should re-track conditional dependencies when their branch changes', async () => {
+      container.innerHTML = '<div @text="show ? a : b"></div>';
+      const state = await helium({ show: true, a: 'A', b: 'B' });
+
+      expect(container.querySelector('div').textContent).toBe('A');
+      state.show = false;
+      state.b = 'updated B';
+      expect(container.querySelector('div').textContent).toBe('updated B');
+
+      state.show = true;
+      state.a = 'updated A';
+      expect(container.querySelector('div').textContent).toBe('updated A');
     });
 
     it('should react to nested object mutations', async () => {
@@ -193,6 +247,19 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
 
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('span').textContent).toBe('Jane');
+    });
+
+    it('should support combined @bind.lazy.trim.number modifiers', async () => {
+      container.innerHTML = '<input @bind.lazy.trim.number="amount" />';
+      const state = await helium({ amount: 0 });
+      const input = container.querySelector('input');
+
+      input.value = ' 42 ';
+      input.dispatchEvent(new Event('input'));
+      expect(state.amount).toBe(0);
+      input.dispatchEvent(new Event('change'));
+      expect(state.amount).toBe(42);
+      expect(typeof state.amount).toBe('number');
     });
 
     it('should handle checkbox binding', async () => {
@@ -436,6 +503,21 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       container.innerHTML = '<div @init="initialized = true"></div>';
       const state = await helium({ initialized: false });
       expect(state.initialized).toBe(true);
+    });
+
+    it('should run a returned cleanup function when the element is removed', async () => {
+      const cleanup = vi.fn();
+      const startClock = vi.fn(() => cleanup);
+      container.innerHTML = '<div @init="start_clock($el, $data)"></div>';
+
+      const state = await helium({ start_clock: startClock });
+      const element = container.firstElementChild;
+      expect(startClock).toHaveBeenCalledWith(element, state);
+
+      element.remove();
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(cleanup).toHaveBeenCalledOnce();
     });
 
     it('should run after all bindings are set up', async () => {

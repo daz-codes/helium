@@ -18,24 +18,24 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 Helium is designed for developers who want:
 
-- **Lightweight** - Just over 3KB minified and gzipped
+- **Lightweight** - About 3.5–10.5KB minified and gzipped, depending on the build
 - **Powerful** - Declarative JavaScript in your HTML
 - **Zero build step** - Works directly in the browser with no compiling
 - **Easy to learn** - If you know HTML and basic JavaScript, you're ready
 
 ## Versions
 
-Helium comes in three versions so you can pick the right balance of features and size for your project:
+Helium comes in three core versions, with SSE available as an optional add-on, so you can pick the right balance of features and size for your project:
 
 ### Helium (Standard)
 
 The full-featured version with everything included.
 
-- All directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`, etc.)
+- All directives (`@text`, `@html`, `@for`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`, etc.)
 - Event handlers with modifiers
 - HTTP requests (`@get`, `@post`, `@put`, `@patch`, `@delete`)
 - Module imports (`@import`)
-- Server-Sent Events (SSE)
+- Optional Server-Sent Events (SSE) add-on
 - Turbo/Hotwire integration
 
 **Best for:** Most projects where you want the full power of Helium without worrying about CSP restrictions.
@@ -50,7 +50,7 @@ A slimmed-down version with just the core reactivity features.
 
 - Core directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`)
 - Event handlers with modifiers
-- No HTTP requests, imports, SSE, or Turbo integration
+- No keyed `@for`, HTTP requests, imports, SSE, or Turbo integration
 
 **Best for:** Simple interactive pages where you only need reactivity and don't need server communication or module imports.
 
@@ -60,10 +60,17 @@ import helium from "@daz4126/helium/lite"
 
 ### Helium CSP
 
-A Content Security Policy safe version that doesn't require `unsafe-eval`. It uses [jexpr](https://github.com/nicolo-ribaudo/jexpr) as its expression engine instead of `new Function()`, while keeping the full feature set.
+A Content Security Policy safe version that doesn't require `unsafe-eval`. It uses [jexpr](https://github.com/nicolo-ribaudo/jexpr) as its expression engine instead of `new Function()`.
 
-- All the same features as the standard version
+- All the same directives and HTTP/Turbo/`@import` features as the standard version
+- Optional Server-Sent Events (SSE) add-on
+- `&&` / `||` / `??` short-circuit correctly, and optional chaining (`a?.b`) is supported
 - CSP-compliant — no `unsafe-eval` needed
+
+Because expressions run through a custom parser rather than the JS engine, a couple of syntax features differ from the standard build:
+
+- No `new` keyword — use the `$Date(...)` and `$FormData(...)` helpers instead
+- Expressions are single expressions, not arbitrary statements
 
 **Best for:** Projects with strict Content Security Policies that prohibit `unsafe-eval`.
 
@@ -76,12 +83,18 @@ import helium from "@daz4126/helium/csp"
 | Feature | Standard | Lite | CSP |
 |---------|----------|------|-----|
 | Core directives | ✅ | ✅ | ✅ |
+| Keyed `@for` | ✅ | ❌ | ✅ |
 | Event handlers | ✅ | ✅ | ✅ |
 | HTTP requests | ✅ | ❌ | ✅ |
 | `@import` | ✅ | ❌ | ✅ |
-| SSE | ✅ | ❌ | ✅ |
+| SSE | Add-on | ❌ | Add-on |
 | Turbo integration | ✅ | ❌ | ✅ |
 | CSP safe | ❌ | ❌ | ✅ |
+| Approx. min+gzip size | 5.99KB | 3.50KB | 10.07KB |
+
+Sizes are enforced against the production Terser builds with gzip level 9. The
+CSP figure includes its expression parser. Adding SSE produces 6.37KB Standard
+and 10.45KB CSP bundles.
 
 ## Installation
 
@@ -104,6 +117,11 @@ Just import from the CDN in a script tag directly in your HTML page:
 <script type="module">
   import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium-csp.js';
 </script>
+
+<!-- Standard + SSE -->
+<script type="module">
+  import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium-sse.js';
+</script>
 ```
 
 ### NPM
@@ -115,14 +133,57 @@ npm install @daz4126/helium
 Then import the version you need:
 
 ```javascript
-import helium from "@daz4126/helium"       // Standard
-import helium from "@daz4126/helium/lite"   // Lite
-import helium from "@daz4126/helium/csp"    // CSP
+import helium from "@daz4126/helium"         // Standard
+import helium from "@daz4126/helium/lite"    // Lite
+import helium from "@daz4126/helium/csp"     // CSP
+import helium from "@daz4126/helium/sse"     // Standard + SSE
+import helium from "@daz4126/helium/csp/sse" // CSP + SSE
 ```
+
+For a pre-minified, self-contained bundle, append `/min` to an entry point:
+
+```javascript
+import helium from "@daz4126/helium/min"
+import helium from "@daz4126/helium/sse/min"
+```
+
+The source entry points remain browser-ready ES modules, so consuming Helium
+does not require a build step.
 
 ### Automatic Initialization
 
-Helium automatically initializes on `DOMContentLoaded`, so you typically don't need to call `helium()` manually unless you're providing default values or functions.
+Helium automatically initializes on `DOMContentLoaded`, so you typically don't need to call `helium()` manually. Calling it manually to provide initial values or functions suppresses the pending automatic initialization, so your state is not replaced when the DOM becomes ready.
+
+### Explicit Mounting
+
+Use `helium.mount()` when a page has multiple independent Helium roots. It
+accepts a selector or an element and returns the root's state plus an idempotent
+`unmount()` function:
+
+```html
+<section id="counter-a">
+  <button @click="count++">Increment</button>
+  <span @text="count"></span>
+</section>
+
+<section id="counter-b">
+  <button @click="count++">Increment</button>
+  <span @text="count"></span>
+</section>
+```
+
+```javascript
+const a = await helium.mount("#counter-a", { count: 0 })
+const b = await helium.mount("#counter-b", { count: 10 })
+
+a.state.count++ // Updates only #counter-a
+a.unmount()     // Safe to call more than once
+```
+
+Explicit roots have independent state, bindings, observers, listeners, refs,
+and cleanup. Calling `mount()` suppresses the pending automatic initialization;
+existing single-root pages can continue relying on auto-initialization or
+calling `helium(initialState)` directly.
 
 ## Helium Attributes
 
@@ -130,7 +191,10 @@ Helium uses custom attributes to add interactivity to HTML elements. To identify
 
 ### @helium
 
-This attribute sets the root element. Helium attributes can only be used on this element and its children. If not set then it defaults to `document.body`.
+This attribute sets the automatically initialized root element. Helium
+attributes are processed on that element and its children. If it is omitted,
+automatic initialization defaults to `document.body`. Explicit
+`helium.mount()` roots do not need this attribute.
 
 ```html
 <div @helium>
@@ -173,6 +237,43 @@ Similar to `@text`, but inserts HTML content into the element's innerHTML. Suppo
 
 **Alias:** `data-he-html`
 
+### @for with :key
+
+Standard and CSP can render arrays and other iterables as keyed DOM rows. Put
+`@for` and `:key` on a `<template>`; Lite deliberately excludes this feature.
+
+```html
+<ul>
+  <template @for="item, index in items" :key="item.id">
+    <li>
+      <span @text="index + 1"></span>.
+      <span @text="item.name"></span>
+      <button @click="item.done = !item.done">Toggle</button>
+    </li>
+  </template>
+</ul>
+```
+
+The optional second alias is the current zero-based index:
+
+```html
+<template @for="item in items" :key="item.id">
+  <!-- item is available to every Helium expression in this row -->
+</template>
+```
+
+Keys must be stable and unique. When the collection changes, Helium moves and
+reuses rows with matching keys, creates new rows, and removes missing rows. This
+preserves element identity, focus, listeners, and `@init` lifecycle state while
+still updating `item`, `index`, and normal root-state dependencies. Cleanup
+functions returned by `@init` run when their keyed row is removed.
+
+`@html="items.map(...).join('')"` remains useful for simple generated markup,
+but keyed `@for` avoids HTML-string interpolation and lets each row use normal
+`@text`, dynamic attributes, events, and other directives.
+
+**Alias:** `data-he-for` (the key remains `:key`)
+
 ### @bind
 
 Creates a 2-way binding between an input element's value and a variable. Whatever is entered in the following input field will be stored as a variable called name:
@@ -209,7 +310,38 @@ Works with:
 </select>
 ```
 
-**Alias:** `data-he-bind`
+**`.number` modifier:** append `.number` to coerce the bound value to a number
+(handy for `type="number"` inputs, which otherwise bind as strings). An empty
+field stays `""`, and non-numeric input is left untouched so partial typing
+still works.
+
+```html
+<input type="number" @bind.number="age">
+<p @text="age + 1"></p> <!-- numeric addition, not string concatenation -->
+```
+
+**`.trim` modifier:** trim leading and trailing whitespace before storing user
+input in state:
+
+```html
+<input @bind.trim="name">
+```
+
+**`.lazy` modifier:** update state on the element's `change` event rather than
+on every `input` event. For text fields this normally means when the edit is
+committed or the field loses focus:
+
+```html
+<input @bind.lazy="search">
+```
+
+Modifiers can be combined in any order:
+
+```html
+<input @bind.lazy.trim.number="amount">
+```
+
+**Alias:** `data-he-bind` (for example `data-he-bind.lazy.trim`)
 
 ### @hidden & @visible
 
@@ -264,6 +396,22 @@ A JavaScript expression that will run once when Helium initializes. Useful for s
 ```html
 <div @init="timestamp = Date.now()"></div>
 <div @init="console.log('Helium initialized!')"></div>
+```
+
+If the expression returns a function, Helium calls it when the element is removed or when Helium is torn down. This is useful for releasing timers, observers, subscriptions, and other resources:
+
+```html
+<div @init="start_clock($el, $data)"></div>
+```
+
+```js
+function start_clock(element, data) {
+  const timer = setInterval(() => {
+    element.textContent = new Date().toLocaleTimeString()
+  }, 1000)
+
+  return () => clearInterval(timer)
+}
 ```
 
 **Alias:** `data-he-init`
@@ -459,7 +607,7 @@ You can add modifiers by appending them with a dot (`.`) after the event name:
 <div @keydown.document.esc="closeModal()">Press ESC anywhere</div>
 ```
 
-**Alias:** Prepend the event name with `data-he-on`, for example `data-he-onclick="count++"`
+**Alias:** Prepend the event name with `data-he-`, for example `data-he-click="count++"`
 
 ## HTTP Requests
 
@@ -643,6 +791,44 @@ Additional fetch options (as an object):
 - `data-he-loading`
 - `data-he-options`
 
+### Server-Sent Events (optional)
+
+SSE parsing is kept out of the core build. Select the add-on entry point when a
+page needs it:
+
+```javascript
+import helium from "@daz4126/helium/sse"
+// Strict CSP: import helium from "@daz4126/helium/csp/sse"
+```
+
+Use the normal HTTP directives. An explicit `@target` is applied to every SSE
+message:
+
+```html
+<button @get="/api/events" @target="#events:append">Connect</button>
+<div id="events"></div>
+```
+
+When `@target` is omitted, an SSE `event:` field can name a CSS selector or a
+state property:
+
+```text
+event: #status
+data: Connected
+```
+
+Set `retryMode` and an optional initial `retry` delay through `@options` to
+reconnect after the stream closes or fails. A server-supplied `retry:` field
+updates the delay and `id:` is sent back as `Last-Event-ID` on reconnection.
+
+```html
+<button @get="/api/events"
+  @target="#events:append"
+  @options="{ retryMode: 'error', retry: 3000 }">
+  Connect
+</button>
+```
+
 ### Complete Example
 
 ```html
@@ -795,8 +981,10 @@ HTTP request functions that can be called programmatically:
 
 The arguments are `url`,`params` (not for `$get`) and `options`. `options` is an object that can include the properties `loading`,`target`, `template`
 
-### $refs
-Object containing all elements marked with `@ref` (prefixed with `$`):
+### Named refs
+
+Each element marked with `@ref="name"` is available as `$name`. There is no
+separate `$refs` object:
 
 ```html
 <input @ref="username">
@@ -1004,7 +1192,11 @@ The token is automatically included in POST, PUT, PATCH, and DELETE requests to 
 
 ### Content Security Policy
 
-If you're using a Content Security Policy, note that Helium uses `new Function()` to evaluate expressions. You'll need to allow `unsafe-eval` or use a build step to pre-compile expressions (coming in a future version).
+The standard and lite builds use `new Function()` and therefore require `unsafe-eval`. For a strict Content Security Policy, use the CSP build instead:
+
+```js
+import helium from "@daz4126/helium/csp"
+```
 
 ## Best Practices
 
@@ -1093,22 +1285,19 @@ If you're using a Content Security Policy, note that Helium uses `new Function()
 
 ### Common Pitfalls
 
-**❌ Don't mutate arrays/objects without triggering reactivity:**
+**Arrays and objects are reactive:**
 
-```javascript
-helium({
-  addItem(items, item) {
-    items.push(item); // ❌ Won't trigger updates
-  }
-})
+```html
+<button @click="items.push(newItem)">Add item</button>
+<span @text="items.length"></span>
 ```
 
-**✅ Pass $data and update through it:**
+Nested mutations made through `$data` are reactive too:
 
 ```javascript
 helium({
   addItem(data, item) {
-    data.items.push(item); // ✅ Triggers updates
+    data.items.push(item); // Triggers updates
   }
 })
 ```
@@ -1141,58 +1330,11 @@ helium({
 <button @click="goodFunction($data)">Works!</button>
 ```
 
-## Security Considerations
-
-### XSS Protection
-
-**Always sanitize user input when using @html:**
-
-```html
-<!-- ❌ Dangerous if userInput contains scripts -->
-<div @html="userInput"></div>
-
-<!-- ✅ Sanitize first -->
-<div @html="sanitize(userInput)"></div>
-```
-
-Consider using a sanitization library like [DOMPurify](https://github.com/cure53/DOMPurify):
-
-```javascript
-import DOMPurify from 'dompurify';
-
-helium({
-  sanitize(html) {
-    return DOMPurify.sanitize(html);
-  }
-});
-```
-
-**Use @text for plain text:**
-
-```html
-<!-- ✅ Safe - automatically escapes HTML -->
-<div @text="userInput"></div>
-```
-
-### CSRF Protection
-
-Helium automatically includes CSRF tokens in same-origin requests. Add this meta tag to your HTML:
-
-```html
-<meta name="csrf-token" content="your-csrf-token">
-```
-
-All POST, PUT, PATCH, and DELETE requests will include the `X-CSRF-Token` header automatically.
-
-### Content Security Policy
-
-If you're using a strict CSP, you may need to allow `'unsafe-eval'` since Helium uses `new Function()` to compile expressions, or use a hash/nonce for the script.
-
 ## Error Handling
 
 ### JavaScript Expression Errors
 
-If an expression throws an error, Helium catches it silently and continues. Check the browser console for error messages.
+If a binding expression throws at runtime, Helium logs the error and continues without updating that binding. Standard and lite retain malformed expressions as literal text for compatibility; quote intentional string constants, for example `@text="'Ready'"`.
 
 ```html
 <!-- If items is undefined, this won't crash the page -->
@@ -1201,13 +1343,12 @@ If an expression throws an error, Helium catches it silently and continues. Chec
 
 ### HTTP Request Errors
 
-Failed requests log errors to the console. Handle them in your expressions:
+HTTP directives log failed requests to the console. Programmatic helpers return
+promises, so you can handle failures explicitly:
 
 ```html
-<button 
-  @post="/api/save"
-  @params="{ data: formData }"
-  @target="#message">
+<button @click="$post('/api/save', { data: formData }, '#message')
+  .catch(error => saveError = error.message)">
   Save
 </button>
 
@@ -1216,8 +1357,28 @@ Failed requests log errors to the console. Handle them in your expressions:
 
 ### Invalid Attribute Syntax
 
-Helium gracefully handles invalid syntax. If an expression can't be compiled, it treats it as a literal value.
+Standard and Lite retain expressions that cannot be compiled as literal values.
+The CSP build logs the parser error and leaves the binding undefined.
 
+
+## Roadmap & Known Limitations
+
+Helium aims to stay tiny, so some conveniences found in larger frameworks are
+intentionally absent (or still on the roadmap). Current gaps:
+
+### Not yet supported
+
+- **No DOM-removing `@if`** — only `@hidden`/`@visible`, which toggle visibility
+  but keep elements in the DOM.
+- **No `$watch`/`$nextTick`, and no cross-root shared store** — each mounted
+  instance has its own isolated state namespace.
+
+### Roadmap
+
+- **Request cancellation** with `AbortController` and explicit success/error hooks.
+- **Real-browser CI** covering CSP, Turbo, SSE, late imports, and package exports.
+- **A generated shared core** for Standard/Lite/CSP to prevent feature drift
+  between the three builds.
 
 ## Contributing
 
@@ -1226,6 +1387,10 @@ Helium is open source! Contributions, issues, and feature requests are welcome.
 - GitHub: [github.com/daz-codes/helium](https://github.com/daz-codes/helium)
 - Report issues: Create an issue on GitHub
 - Suggest features: Open a discussion on GitHub
+
+Before submitting a change, run `npm run check`. It executes the full test
+suite, creates the production bundles, and fails if any gzip size budget is
+exceeded. `npm run size` also reports raw, gzip, and Brotli sizes.
 
 ## License
 

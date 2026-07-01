@@ -180,6 +180,14 @@ class Tokenizer {
 
   _tokenizeOperator() {
     this._advance();
+    // Optional chaining `?.` — emit a plain dot token. Property access, indexing
+    // and invocation already evaluate null-safely (they use `?.` internally), so
+    // `a?.b`, `a?.b()` short-circuit naturally without a dedicated AST node.
+    if (this._next === 46 && this._input.charCodeAt(this._index - 1) === 63) {
+      this._advance();               // consume the '.'
+      this._tokenStart = this._index;
+      return token(Kind.DOT, '.', POSTFIX_PRECEDENCE);
+    }
     let op = this._getValue(2);
     if (['===', '!=='].includes(op)) {
       this._advance();
@@ -526,6 +534,12 @@ class EvalAstFactory {
           }
           return receiver === undefined ? undefined : (receiver[property] = value);
         }
+        // Logical operators must short-circuit to match JS semantics: the right
+        // operand is only evaluated when needed (e.g. `false && fn()` must not
+        // call fn(), `cond || fallback()` must not call fallback() when truthy).
+        if (this.operator === '&&') return this.left.evaluate(scope) && this.right.evaluate(scope);
+        if (this.operator === '||') return this.left.evaluate(scope) || this.right.evaluate(scope);
+        if (this.operator === '??') return this.left.evaluate(scope) ?? this.right.evaluate(scope);
         return f(this.left.evaluate(scope), this.right.evaluate(scope));
       },
       getIds(idents) {

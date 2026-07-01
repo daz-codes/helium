@@ -38,6 +38,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/helium-sse.js' || url.pathname === '/../helium-sse.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript' });
+    res.end(fs.readFileSync(path.join(__dirname, '..', 'helium-sse.js')));
+    return;
+  }
+
   // SSE Endpoints
   if (url.pathname === '/api/hello-world') {
     res.writeHead(200, {

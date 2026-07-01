@@ -6,12 +6,36 @@
   "exports": {
     ".": "./helium.js",
     "./lite": "./helium-lite.js",
-    "./csp": "./helium-csp.js"
+    "./sse": "./helium-sse.js",
+    "./csp": "./helium-csp.js",
+    "./csp/sse": "./helium-csp-sse.js",
+    "./min": "./dist/helium.min.js",
+    "./lite/min": "./dist/helium-lite.min.js",
+    "./sse/min": "./dist/helium-sse.min.js",
+    "./csp/min": "./dist/helium-csp.min.js",
+    "./csp/sse/min": "./dist/helium-csp-sse.min.js"
   },
+  "files": [
+    "helium.js",
+    "helium-lite.js",
+    "helium-sse.js",
+    "helium-csp.js",
+    "helium-csp-sse.js",
+    "jexpr.js",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "size": "npm run build && node scripts/size.mjs",
+    "size:check": "npm run build && node scripts/size.mjs --check",
+    "check": "npm run test:run && npm run size:check && npm run test:dist",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:dist": "node scripts/smoke-build.mjs",
+    "prepack": "npm run size:check && npm run test:dist"
   },
   "keywords": [
     "tiny",
@@ -32,7 +56,9 @@
   },
   "homepage": "https://github.com/daz-codes/helium#readme",
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "jsdom": "^27.0.1",
+    "terser": "^5.48.0",
     "vitest": "^3.2.4"
   }
 }

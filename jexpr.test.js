@@ -548,4 +548,65 @@ describe('jexpr - Expression Parser', () => {
       expect(evaluate('-.5')).toBe(-0.5);
     });
   });
+
+  describe('Short-circuit evaluation', () => {
+    it('&& should not evaluate the right operand when left is falsy', () => {
+      let called = false;
+      const scope = { flag: false, boom: () => { called = true; return true; } };
+      expect(evaluate('flag && boom()', scope)).toBe(false);
+      expect(called).toBe(false);
+    });
+
+    it('&& should evaluate the right operand when left is truthy', () => {
+      let called = false;
+      const scope = { flag: true, boom: () => { called = true; return 'ok'; } };
+      expect(evaluate('flag && boom()', scope)).toBe('ok');
+      expect(called).toBe(true);
+    });
+
+    it('|| should not evaluate the right operand when left is truthy', () => {
+      let called = false;
+      const scope = { flag: 'yes', boom: () => { called = true; return 'fallback'; } };
+      expect(evaluate('flag || boom()', scope)).toBe('yes');
+      expect(called).toBe(false);
+    });
+
+    it('?? should not evaluate the right operand when left is non-nullish', () => {
+      let called = false;
+      const scope = { val: 0, boom: () => { called = true; return 9; } };
+      expect(evaluate('val ?? boom()', scope)).toBe(0);
+      expect(called).toBe(false);
+    });
+
+    it('?? should evaluate the right operand when left is nullish', () => {
+      const scope = { val: null, fallback: () => 42 };
+      expect(evaluate('val ?? fallback()', scope)).toBe(42);
+    });
+  });
+
+  describe('Optional chaining', () => {
+    it('should access a property on a defined object', () => {
+      expect(evaluate('user?.name', { user: { name: 'Ada' } })).toBe('Ada');
+    });
+
+    it('should short-circuit to undefined when the receiver is nullish', () => {
+      expect(evaluate('user?.name', { user: null })).toBe(undefined);
+      expect(evaluate('user?.name', {})).toBe(undefined);
+    });
+
+    it('should short-circuit a deeper chain without throwing', () => {
+      expect(evaluate('a?.b.c', { a: null })).toBe(undefined);
+      expect(evaluate('a?.b.c', { a: { b: { c: 7 } } })).toBe(7);
+    });
+
+    it('should support optional method calls', () => {
+      expect(evaluate('obj?.greet()', { obj: { greet: () => 'hi' } })).toBe('hi');
+      expect(evaluate('obj?.greet()', { obj: null })).toBe(undefined);
+    });
+
+    it('should not interfere with the ternary operator', () => {
+      expect(evaluate('cond ? 1 : 2', { cond: true })).toBe(1);
+      expect(evaluate('cond ? 1 : 2', { cond: false })).toBe(2);
+    });
+  });
 });

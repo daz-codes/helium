@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import helium from './helium.js';
+import helium from './helium-sse.js';
 
 describe('Helium Reactive Library', () => {
   let container;
@@ -31,6 +31,33 @@ describe('Helium Reactive Library', () => {
       expect(container.querySelector('div').textContent).toBe('10');
     });
 
+    it('should re-track conditional dependencies when their branch changes', async () => {
+      container.innerHTML = '<div @text="show ? a : b"></div>';
+      const state = await helium({ show: true, a: 'A', b: 'B' });
+
+      expect(container.querySelector('div').textContent).toBe('A');
+      state.show = false;
+      state.b = 'updated B';
+      expect(container.querySelector('div').textContent).toBe('updated B');
+
+      state.show = true;
+      state.a = 'updated A';
+      expect(container.querySelector('div').textContent).toBe('updated A');
+    });
+
+    it('should prefer common state names over window properties', async () => {
+      const originalName = window.name;
+      window.name = 'window value';
+      container.innerHTML = '<button @click="name = \'state value\'"></button>';
+
+      const state = await helium();
+      container.querySelector('button').click();
+
+      expect(state.name).toBe('state value');
+      expect(window.name).toBe('window value');
+      window.name = originalName;
+    });
+
     it('should react to nested object mutations', async () => {
       container.innerHTML = '<div @text="user.name"></div>';
       const state = await helium({ user: { name: 'Alice' } });
@@ -38,6 +65,20 @@ describe('Helium Reactive Library', () => {
       state.user.name = 'Bob';
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').textContent).toBe('Bob');
+    });
+
+    it('should react to deeply nested object mutations', async () => {
+      container.innerHTML = '<div @text="user.address.city"></div>';
+      const state = await helium({ user: { address: { city: 'Paris' } } });
+
+      state.user.address.city = 'Berlin';
+      await new Promise(r => setTimeout(r, 0));
+      expect(container.querySelector('div').textContent).toBe('Berlin');
+
+      // replacing an intermediate object should also update
+      state.user.address = { city: 'Rome' };
+      await new Promise(r => setTimeout(r, 0));
+      expect(container.querySelector('div').textContent).toBe('Rome');
     });
 
     it('should react to array push', async () => {
@@ -65,6 +106,15 @@ describe('Helium Reactive Library', () => {
       state.items = [...state.items, 4, 5];
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').textContent).toBe('5');
+    });
+
+    it('should not proxy Date instances', async () => {
+      container.innerHTML = '<div @text="when.getUTCFullYear()"></div>';
+      const when = new Date('2020-01-01T00:00:00Z');
+      const state = await helium({ when });
+
+      expect(state.when).toBe(when);
+      expect(container.querySelector('div').textContent).toBe('2020');
     });
   });
 
@@ -114,6 +164,62 @@ describe('Helium Reactive Library', () => {
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('span').textContent).toBe('Jane');
     });
+
+    it('@bind.number should coerce the value to a number', async () => {
+      container.innerHTML = '<input type="number" @bind.number="age" />';
+      const state = await helium({ age: 0 });
+      const input = container.querySelector('input');
+
+      input.value = '42';
+      input.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.age).toBe(42);
+      expect(typeof state.age).toBe('number');
+    });
+
+    it('@bind.number should keep an empty field as an empty string', async () => {
+      container.innerHTML = '<input type="number" @bind.number="age" />';
+      const state = await helium({ age: 5 });
+      const input = container.querySelector('input');
+
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.age).toBe('');
+    });
+
+    it('@bind.trim should trim user input', async () => {
+      container.innerHTML = '<input @bind.trim="name" />';
+      const state = await helium({ name: '' });
+      const input = container.querySelector('input');
+
+      input.value = '  Jane  ';
+      input.dispatchEvent(new Event('input'));
+      expect(state.name).toBe('Jane');
+    });
+
+    it('@bind.lazy should update on change rather than input', async () => {
+      container.innerHTML = '<input @bind.lazy="name" />';
+      const state = await helium({ name: 'John' });
+      const input = container.querySelector('input');
+
+      input.value = 'Jane';
+      input.dispatchEvent(new Event('input'));
+      expect(state.name).toBe('John');
+      input.dispatchEvent(new Event('change'));
+      expect(state.name).toBe('Jane');
+    });
+
+    it('should combine @bind.lazy.trim.number modifiers', async () => {
+      container.innerHTML = '<input @bind.lazy.trim.number="amount" />';
+      const state = await helium({ amount: 0 });
+      const input = container.querySelector('input');
+
+      input.value = ' 42 ';
+      input.dispatchEvent(new Event('change'));
+      expect(state.amount).toBe(42);
+      expect(typeof state.amount).toBe('number');
+    });
   });
 
   describe('Directives - @hidden and @visible', () => {
@@ -157,6 +263,19 @@ describe('Helium Reactive Library', () => {
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').getAttribute('title')).toBe('Updated');
     });
+
+    it('should remove stale object-form classes while preserving static classes', async () => {
+      container.innerHTML = '<div class="base" :class="classes"></div>';
+      const state = await helium({ classes: { active: true, stale: true } });
+      const element = container.querySelector('div');
+
+      state.classes = { active: false, current: true };
+
+      expect(element.classList.contains('base')).toBe(true);
+      expect(element.classList.contains('active')).toBe(false);
+      expect(element.classList.contains('stale')).toBe(false);
+      expect(element.classList.contains('current')).toBe(true);
+    });
   });
 
   describe('Event Handlers', () => {
@@ -191,6 +310,24 @@ describe('Helium Reactive Library', () => {
       expect(state.pressed).toBe(true);
     });
 
+    it('should match key modifiers regardless of order with other modifiers', async () => {
+      container.innerHTML = '<input @keydown.enter.prevent="pressed = true" />';
+      const state = await helium({ pressed: false });
+      const input = container.querySelector('input');
+
+      // non-matching key should be ignored even though .prevent is last
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', cancelable: true }));
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.pressed).toBe(false);
+
+      // matching key still fires and the .prevent modifier still applies
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+      input.dispatchEvent(enter);
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.pressed).toBe(true);
+      expect(enter.defaultPrevented).toBe(true);
+    });
+
     it('should handle debounced events', async () => {
       container.innerHTML = '<input @input.debounce:100="value = $event.target.value" />';
       const state = await helium({ value: '' });
@@ -218,6 +355,37 @@ describe('Helium Reactive Library', () => {
       await new Promise(r => setTimeout(r, 0));
       expect(state.count).toBe(1);
     });
+
+    it('once combined with a key filter should fire once when the key matches', async () => {
+      container.innerHTML = '<input @keydown.once.enter="count++">';
+      const state = await helium({ count: 0 });
+      const input = container.querySelector('input');
+
+      // A non-matching key must NOT consume the .once (the old {once:true}
+      // option removed the listener on the first keydown regardless of key).
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }));
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.count).toBe(0);
+
+      // First Enter fires and removes; subsequent Enters do nothing.
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.count).toBe(1);
+    });
+
+    it('outside.once should only be consumed by a matching outside event', async () => {
+      container.innerHTML = '<div id="inside" @click.outside.once="count++"></div><button id="outside"></button>';
+      const state = await helium({ count: 0 });
+
+      container.querySelector('#inside').click();
+      expect(state.count).toBe(0);
+
+      container.querySelector('#outside').click();
+      container.querySelector('#outside').click();
+      expect(state.count).toBe(1);
+    });
   });
 
   describe('@ref Directive', () => {
@@ -228,6 +396,17 @@ describe('Helium Reactive Library', () => {
       container.querySelector('button').click();
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').textContent).toBe('Changed');
+    });
+
+    it('should remove references when their elements are detached', async () => {
+      container.innerHTML = '<div id="referenced" @ref="thing"></div><button @click="seen = typeof $thing"></button>';
+      const state = await helium({ seen: '' });
+
+      container.querySelector('#referenced').remove();
+      await new Promise(r => setTimeout(r, 0));
+      container.querySelector('button').click();
+
+      expect(state.seen).toBe('undefined');
     });
 
     it('should make refs available in @params for AJAX requests', async () => {
@@ -289,6 +468,47 @@ describe('Helium Reactive Library', () => {
       container.innerHTML = '<div @init="initialized = true"></div>';
       const state = await helium({ initialized: false });
       expect(state.initialized).toBe(true);
+    });
+
+    it('should run a returned cleanup function when the element is removed', async () => {
+      const cleanup = vi.fn();
+      const startClock = vi.fn(() => cleanup);
+      container.innerHTML = '<div @init="start_clock($el, $data)"></div>';
+
+      const state = await helium({ start_clock: startClock });
+      const element = container.firstElementChild;
+      expect(startClock).toHaveBeenCalledWith(element, state);
+
+      element.remove();
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('should initialize and clean up dynamically added elements', async () => {
+      const cleanup = vi.fn();
+      const startClock = vi.fn(() => cleanup);
+      await helium({ start_clock: startClock });
+
+      const element = document.createElement('div');
+      element.setAttribute('data-he-init', 'start_clock($el)');
+      container.appendChild(element);
+      await new Promise(r => setTimeout(r, 0));
+      expect(startClock).toHaveBeenCalledWith(element);
+
+      element.remove();
+      await new Promise(r => setTimeout(r, 0));
+      expect(cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('should run cleanup when Helium is torn down', async () => {
+      const cleanup = vi.fn();
+      container.innerHTML = '<div @init="start()"></div>';
+      await helium({ start: () => cleanup });
+
+      window.heliumTeardown();
+
+      expect(cleanup).toHaveBeenCalledOnce();
     });
   });
 
@@ -387,7 +607,7 @@ describe('Helium Reactive Library', () => {
       });
 
       container.innerHTML = `
-        <button @get="/api/hello-world" @target="#message">Start</button>
+        <button @get="/api/hello-world">Start</button>
         <div id="message"></div>
       `;
       await helium({});
@@ -484,16 +704,22 @@ describe('Helium Reactive Library', () => {
       expect(container.querySelector('#result').innerHTML).toBe('<div>SSE content</div>');
     });
 
-    it('should track event id for potential reconnection', async () => {
+    it('should send the event id when reconnecting', async () => {
       const sseData = 'id: 42\ndata: <span>Connected</span>\n\n';
 
-      global.fetch.mockResolvedValueOnce({
-        headers: { get: () => 'text/event-stream' },
-        body: createSSEStream([sseData])
-      });
+      global.fetch
+        .mockResolvedValueOnce({
+          headers: { get: () => 'text/event-stream' },
+          body: createSSEStream([sseData])
+        })
+        .mockResolvedValueOnce({
+          headers: { get: () => 'text/html' },
+          text: async () => '<span>Reconnected</span>'
+        });
 
       container.innerHTML = `
-        <button @get="/api/status" @target="#status">Connect</button>
+        <button @get="/api/status" @target="#status"
+          @options="{ retryMode: 'always', retry: 1 }">Connect</button>
         <div id="status"></div>
       `;
       await helium({});
@@ -501,7 +727,9 @@ describe('Helium Reactive Library', () => {
       container.querySelector('button').click();
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      expect(container.querySelector('#status').innerHTML).toBe('<span>Connected</span>');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[1][1].headers['Last-Event-ID']).toBe('42');
+      expect(container.querySelector('#status').innerHTML).toBe('<span>Reconnected</span>');
     });
 
     it('should handle chunked SSE data', async () => {
@@ -866,5 +1094,352 @@ describe('@calculate', () => {
       // count from localStorage (5), function from @data
       expect(container.querySelector('#result').textContent).toBe('10');
     });
+  });
+});
+
+  describe('Re-initialization', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+  });
+
+  describe('Explicit mounts', () => {
+    it('should mount independent roots and unmount them idempotently', async () => {
+      container.innerHTML = `
+        <section id="mount-a"><button @click="count++">A</button><span @text="count"></span></section>
+        <section id="mount-b"><button @click="count++">B</button><span @text="count"></span></section>
+      `;
+
+      const a = await helium.mount('#mount-a', { count: 1 });
+      const b = await helium.mount(container.querySelector('#mount-b'), { count: 10 });
+
+      container.querySelector('#mount-a button').click();
+      expect(a.state.count).toBe(2);
+      expect(b.state.count).toBe(10);
+      expect(container.querySelector('#mount-a span').textContent).toBe('2');
+      expect(container.querySelector('#mount-b span').textContent).toBe('10');
+
+      a.unmount();
+      a.unmount();
+      a.state.count = 99;
+      b.state.count = 11;
+
+      expect(container.querySelector('#mount-a span').textContent).toBe('2');
+      expect(container.querySelector('#mount-b span').textContent).toBe('11');
+      b.unmount();
+    });
+
+    it('should reject a selector that does not match a root', async () => {
+      await expect(helium.mount('#missing-root')).rejects.toThrow(/root/i);
+    });
+  });
+
+  describe('Keyed @for', () => {
+    it('should render, reorder, update, and remove keyed rows without replacing them', async () => {
+      const cleaned = vi.fn();
+      container.innerHTML = `
+        <ul>
+          <template @for="item, index in items" :key="item.id">
+            <li :data-id="item.id" @init="setup(item.id)">
+              <button @click="item.name += '!'" @text="index + ': ' + item.name"></button>
+            </li>
+          </template>
+        </ul>
+      `;
+      const state = await helium({
+        items: [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }],
+        setup: id => () => cleaned(id)
+      });
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const rowA = container.querySelector('[data-id="a"]');
+      expect([...container.querySelectorAll('button')].map(el => el.textContent)).toEqual(['0: Alpha', '1: Beta']);
+      expect(state.item).toBeUndefined();
+      expect(state.index).toBeUndefined();
+
+      const focused = rowA.querySelector('button');
+      focused.focus();
+      state.items[0].name = 'Alpha+';
+      expect(document.activeElement).toBe(focused);
+
+      state.items = [state.items[1], state.items[0]];
+      expect(container.querySelectorAll('li')[1]).toBe(rowA);
+      expect([...container.querySelectorAll('button')].map(el => el.textContent)).toEqual(['0: Beta', '1: Alpha+']);
+
+      container.querySelector('[data-id="b"] button').click();
+      expect(state.items[0].name).toBe('Beta!');
+      expect(container.querySelector('[data-id="b"] button').textContent).toBe('0: Beta!');
+
+      const rowB = container.querySelector('[data-id="b"]');
+      state.items = [{ id: 'b', name: 'Replacement' }];
+      expect(container.querySelector('[data-id="b"]')).toBe(rowB);
+      expect(rowB.querySelector('button').textContent).toBe('0: Replacement');
+      expect(container.querySelector('[data-id="a"]')).toBeNull();
+      expect(cleaned).toHaveBeenCalledWith('a');
+    });
+
+    it('should process bindings in newly inserted keyed rows', async () => {
+      container.innerHTML = `
+        <template data-he-for="item in items" :key="item.id">
+          <span :data-id="item.id" @text="item.name"></span>
+        </template>
+      `;
+      const state = await helium({ items: [] });
+      state.items.push({ id: 1, name: 'Added' });
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(container.querySelector('[data-id="1"]').textContent).toBe('Added');
+    });
+  });
+
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+  });
+
+  it('should not throw when helium() is called twice without teardown', async () => {
+    container.innerHTML = '<p @text="count"></p>';
+    await helium({ count: 1 });
+    // Second call (e.g. Turbo navigation) must not crash on stale bindings.
+    await expect(helium({ count: 2 })).resolves.toBeDefined();
+    expect(container.querySelector('p').textContent).toBe('2');
+  });
+
+  it('should stay reactive after re-initialization', async () => {
+    container.innerHTML = '<p @text="count"></p><button @click="count++">+</button>';
+    await helium({ count: 0 });
+    const state = await helium({ count: 10 });
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 0));
+    expect(state.count).toBe(11);
+    expect(container.querySelector('p').textContent).toBe('11');
+  });
+
+  it('should ignore mutations made through a stale state proxy', async () => {
+    container.innerHTML = '<p @text="count"></p>';
+    const first = await helium({ count: 1 });
+    const second = await helium({ count: 10 });
+
+    first.count = 99;
+
+    expect(first.count).toBe(99);
+    expect(second.count).toBe(10);
+    expect(container.querySelector('p').textContent).toBe('10');
+  });
+
+  it('should re-initialize on a turbo:render cycle', async () => {
+    container.innerHTML = '<p @text="count"></p>';
+    await helium({ count: 5 });
+    expect(container.querySelector('p').textContent).toBe('5');
+
+    // Simulate a Turbo navigation: before-render tears down, render re-inits.
+    document.dispatchEvent(new Event('turbo:before-render'));
+    document.dispatchEvent(new Event('turbo:render'));
+    await new Promise(r => setTimeout(r, 0));
+
+    // Helium must still be alive: a fresh helium() works and updates the DOM.
+    const state = await helium({ count: 7 });
+    expect(container.querySelector('p').textContent).toBe('7');
+    state.count = 9;
+    await new Promise(r => setTimeout(r, 0));
+    expect(container.querySelector('p').textContent).toBe('9');
+  });
+});
+
+describe('data-he-* aliases', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+  });
+
+  it('data-he-data should initialize state (alias for @data)', async () => {
+    container.innerHTML = '<div data-he-data="{ count: 7 }"><span @text="count"></span></div>';
+    const state = await helium();
+    expect(state.count).toBe(7);
+    expect(container.querySelector('span').textContent).toBe('7');
+  });
+
+  it('data-he-click should attach a click handler (alias for @click)', async () => {
+    container.innerHTML = '<button data-he-click="count++">+</button><span @text="count"></span>';
+    const state = await helium({ count: 0 });
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 0));
+    expect(state.count).toBe(1);
+    expect(container.querySelector('span').textContent).toBe('1');
+  });
+});
+
+describe('HTTP robustness', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+    global.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('should not crash when @get has no @target', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ data: 'ok' })
+    });
+    container.innerHTML = '<button @get="/api/data">Load</button>';
+    await helium({});
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 50));
+    // Reaching here without a thrown "Invalid selector" is the assertion.
+    expect(global.fetch).toHaveBeenCalledWith('/api/data', expect.any(Object));
+  });
+
+  it('should not render an error response into the success target', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch.mockResolvedValueOnce({
+      ok: false, status: 500, statusText: 'Server Error',
+      headers: { get: () => 'text/html' },
+      text: async () => '<b>boom</b>'
+    });
+    container.innerHTML = '<button @get="/api/data" @target="#out">Load</button><div id="out">original</div>';
+    await helium({});
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 50));
+    expect(container.querySelector('#out').innerHTML).toBe('original');
+    expect(spy).toHaveBeenCalledWith('AJAX:', expect.stringContaining('HTTP 500'));
+  });
+
+  it('should accept a null JSON response', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => null
+    });
+    container.innerHTML = '<button @get="/api/empty" @target="#out">Load</button><div id="out">original</div>';
+    await helium({});
+
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(container.querySelector('#out').innerHTML).toBe('');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('should encode GET @params into the query string', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({})
+    });
+    container.innerHTML = `<button @get="/api/search" @params="{ q: 'hello world', page: 2 }">Search</button>`;
+    await helium({});
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 50));
+    const [calledUrl] = global.fetch.mock.calls[0];
+    expect(calledUrl).toContain('/api/search?');
+    expect(calledUrl).toContain('q=hello+world');
+    expect(calledUrl).toContain('page=2');
+  });
+
+  it('$get should return an awaitable promise', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ ok: true })
+    });
+    container.innerHTML = `<button @click="$get('/api/data', '#out').then(() => done = true)">Go</button><div id="out"></div>`;
+    const state = await helium({ done: false });
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 50));
+    expect(state.done).toBe(true);
+  });
+
+  it('should parse SSE streams that use CRLF line endings', async () => {
+    const encoder = new TextEncoder();
+    const chunk = 'event: message\r\ndata: <span>hi</span>\r\n\r\n';
+    let sent = false;
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'text/event-stream' },
+      body: new ReadableStream({
+        pull(controller) {
+          if (!sent) { controller.enqueue(encoder.encode(chunk)); sent = true; }
+          else controller.close();
+        }
+      })
+    });
+    container.innerHTML = '<button @get="/api/sse" @target="#out">Start</button><div id="out"></div>';
+    await helium({});
+    container.querySelector('button').click();
+    await new Promise(r => setTimeout(r, 50));
+    expect(container.querySelector('#out').innerHTML).toBe('<span>hi</span>');
+  });
+});
+
+describe('Nested & shared reactivity', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+  });
+
+  it('should update every binding that reaches a shared object reference', async () => {
+    const shared = { x: 1 };
+    container.innerHTML = '<span id="a" @text="a.x"></span><span id="b" @text="b.x"></span>';
+    const state = await helium({ a: shared, b: shared });
+    expect(container.querySelector('#a').textContent).toBe('1');
+    expect(container.querySelector('#b').textContent).toBe('1');
+
+    // Mutating through one property must refresh bindings that read the other.
+    state.a.x = 99;
+    await new Promise(r => setTimeout(r, 0));
+    expect(container.querySelector('#a').textContent).toBe('99');
+    expect(container.querySelector('#b').textContent).toBe('99');
+  });
+
+  it('should not infinite-loop on cyclic references', async () => {
+    const node = { val: 1 };
+    node.self = node;
+    container.innerHTML = '<span @text="node.self.val"></span>';
+    const state = await helium({ node });
+    expect(container.querySelector('span').textContent).toBe('1');
+
+    state.node.val = 5;
+    await new Promise(r => setTimeout(r, 0));
+    expect(container.querySelector('span').textContent).toBe('5');
+  });
+
+  it('should still re-trigger ancestor bindings on a deep mutation', async () => {
+    container.innerHTML = '<span @text="user.address.city"></span>';
+    const state = await helium({ user: { address: { city: 'Paris' } } });
+    expect(container.querySelector('span').textContent).toBe('Paris');
+
+    state.user.address.city = 'Lyon';
+    await new Promise(r => setTimeout(r, 0));
+    expect(container.querySelector('span').textContent).toBe('Lyon');
   });
 });
