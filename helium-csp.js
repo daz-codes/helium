@@ -181,6 +181,21 @@ const RESERVED_WORDS = new Set([
   'String', 'Number', 'Boolean', 'Date', 'JSON', 'Map', 'Set'
 ]);
 
+// Globals the page has explicitly opted in to exposing to expressions.
+// Capability-bearing globals (window, document, fetch, localStorage, timers…)
+// are excluded from the default scope so that an attacker who can inject
+// attributes can't reach cookies, storage, or the network through them.
+// Pass the actual references to opt back in; pass undefined to revoke:
+//   allowGlobals({ localStorage, fetch });
+//   allowGlobals({ fetch: undefined });
+const extraGlobals = {};
+const allowGlobals = globals => {
+  for (const [key, value] of Object.entries(globals)) {
+    if (value === undefined) delete extraGlobals[key];
+    else extraGlobals[key] = value;
+  }
+};
+
 // jexpr-based expression engine (CSP-safe)
 const jexprEngine = {
   compile(expr, withReturn = true) {
@@ -209,21 +224,16 @@ const jexprEngine = {
 
   createScope(ctx) {
     const locals = {
-      // Browser globals
+      // Side-effect-free builtins only; capability-bearing globals must be
+      // opted in per page via allowGlobals() (see note above).
       console, Math, Date, JSON,
-      navigator, window, document, location, history,
-      localStorage, sessionStorage,
-      setTimeout, setInterval, clearTimeout, clearInterval,
-      fetch, Promise, URL, URLSearchParams,
-      alert, confirm, prompt,
+      Object, Array, String, Number, Boolean, Map, Set,
+      Promise, URL, URLSearchParams,
       parseInt, parseFloat, isNaN, isFinite,
       encodeURIComponent, decodeURIComponent, encodeURI, decodeURI,
       atob, btoa,
-      // Observers (optional - may not exist in all environments)
-      ...(typeof IntersectionObserver !== 'undefined' && { IntersectionObserver }),
-      ...(typeof ResizeObserver !== 'undefined' && { ResizeObserver }),
-      ...(typeof MutationObserver !== 'undefined' && { MutationObserver }),
-      // Helium helpers
+      ...extraGlobals,
+      // Helium helpers (declared after extraGlobals so they can't be clobbered)
       $: ctx.$,
       $el: ctx.el,
       $event: ctx.event,
@@ -274,6 +284,7 @@ const mount = (root, initialState) => {
 };
 
 helium.mount = mount;
+helium.allowGlobals = allowGlobals;
 
 const heliumTeardown = () => {
   suppressAutoInit();
@@ -312,5 +323,5 @@ if (typeof document !== 'undefined') {
   document.addEventListener("turbo:render", () => helium());
 }
 
-export { helium, heliumTeardown, evaluate, preprocess };
+export { helium, heliumTeardown, evaluate, preprocess, allowGlobals };
 export default helium;

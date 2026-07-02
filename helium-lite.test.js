@@ -78,6 +78,23 @@ describe('Helium Lite', () => {
       expect(container.querySelector('div').textContent).toBe('2020');
     });
 
+    it('should propagate deeply nested mutations through the shared core', async () => {
+      container.innerHTML = '<div @text="user.address.city"></div>';
+      const state = await helium({ user: { address: { city: 'London' } } });
+
+      state.user.address.city = 'Bristol';
+      expect(container.querySelector('div').textContent).toBe('Bristol');
+    });
+
+    it('should update bindings through shared object references', async () => {
+      container.innerHTML = '<span @text="a.name"></span><span @text="b.name"></span>';
+      const shared = { name: 'Before' };
+      const state = await helium({ a: shared, b: shared });
+
+      state.a.name = 'After';
+      expect([...container.querySelectorAll('span')].map(el => el.textContent)).toEqual(['After', 'After']);
+    });
+
     it('should support independent explicit mounts', async () => {
       container.innerHTML = '<section id="a"><span @text="count"></span></section><section id="b"><span @text="count"></span></section>';
       const a = await helium.mount('#a', { count: 1 });
@@ -145,6 +162,34 @@ describe('Helium Lite', () => {
       input.dispatchEvent(new Event('change'));
       expect(state.amount).toBe(42);
       expect(typeof state.amount).toBe('number');
+    });
+
+    it('should two-way bind a nested path', async () => {
+      container.innerHTML = '<input @bind="user.name" /><span @text="user.name"></span>';
+      const state = await helium({ user: { name: 'Alice' } });
+      const input = container.querySelector('input');
+
+      expect(input.value).toBe('Alice');
+      input.value = 'Bob';
+      input.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(state.user.name).toBe('Bob');
+      expect(state['user.name']).toBeUndefined();
+      expect(container.querySelector('span').textContent).toBe('Bob');
+    });
+
+    it('should keep one global state namespace when @scope markup is present', async () => {
+      container.innerHTML = `
+        <div @scope="{ count: 1 }"><button @click="count++"></button><span @text="count"></span></div>
+        <div @scope="{ count: 8 }"><span @text="count"></span></div>
+      `;
+      const state = await helium({ count: 20 });
+
+      container.querySelector('button').click();
+
+      expect([...container.querySelectorAll('span')].map(el => el.textContent)).toEqual(['21', '21']);
+      expect(state.count).toBe(21);
     });
   });
 

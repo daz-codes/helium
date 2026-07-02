@@ -17,7 +17,12 @@
       "Bash(grep -n \"^##\\\\|^| \\\\`@\" README.md)",
       "Read(//private/tmp/**)",
       "Bash(node -e ' *)",
-      "Bash(node -e \"console.log\\('node', process.version\\)\")"
+      "Bash(node -e \"console.log\\('node', process.version\\)\")",
+      "Bash(grep -E \"\\\\.\\(js|mjs\\)$\")",
+      "Skill(code-review)",
+      "Bash(grep *)",
+      "Bash(shasum helium-lite.js)",
+      "Bash(npm run *)"
     ]
   }
 }

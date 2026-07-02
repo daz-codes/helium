@@ -3,6 +3,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as bundle } from "esbuild";
 import { minify } from "terser";
+import { runGenerate } from "./generate-lite.mjs";
+
+await runGenerate();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = resolve(root, "dist");

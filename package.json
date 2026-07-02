@@ -27,13 +27,15 @@
     "LICENSE"
   ],
   "scripts": {
+    "generate": "node scripts/generate-lite.mjs",
     "build": "node scripts/build.mjs",
     "size": "npm run build && node scripts/size.mjs",
     "size:check": "npm run build && node scripts/size.mjs --check",
     "check": "npm run test:run && npm run size:check && npm run test:dist",
+    "pretest": "npm run generate",
     "test": "vitest",
-    "test:ui": "vitest --ui",
-    "test:run": "vitest run",
+    "test:ui": "npm run generate && vitest --ui",
+    "test:run": "npm run generate && vitest run",
     "test:dist": "node scripts/smoke-build.mjs",
     "prepack": "npm run size:check && npm run test:dist"
   },

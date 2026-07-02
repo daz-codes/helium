@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Helium is an ultra-light reactive library that makes HTML interactive using declarative attributes. The Standard production build is about 5.99KB minified/gzipped. Its source entry points require no build step and work directly in the browser.
+Helium is an ultra-light reactive library that makes HTML interactive using declarative attributes. The Standard production build is about 6.49KB minified/gzipped and Lite is about 3.93KB. Its source entry points require no build step and work directly in the browser.
 
 ## Commands
 
@@ -12,6 +12,7 @@ Helium is an ultra-light reactive library that makes HTML interactive using decl
 npm test          # Run tests in watch mode (Vitest)
 npm run test:ui   # Run tests with interactive UI dashboard
 npm run test:run  # Run tests once (CI mode)
+npm run generate  # Regenerate helium-lite.js from the shared helium.js source
 npm run build     # Generate minified, self-contained bundles in dist/
 npm run size      # Report raw, gzip, and Brotli sizes
 npm run test:dist # Smoke-test every generated production bundle
@@ -26,6 +27,7 @@ modules. The maintainer build generates the optimized `dist/` entry points.
 ### Core Concepts
 
 - **Three browser-ready core builds**: Standard (`helium.js`), Lite (`helium-lite.js`), and CSP (`helium-csp.js` plus `jexpr.js`)
+- **Generated shared core**: unmarked `helium.js` sections are the Lite/core runtime; `@standard` sections add keyed lists, HTTP, imports, SSE hooks, and Turbo before `helium-lite.js` is generated
 - **Optional SSE add-ons**: `helium-sse.js` and `helium-csp-sse.js`
 - **Proxy-based reactivity**: Uses JavaScript Proxy to intercept state changes and trigger DOM updates
 - **Attribute-driven**: Interactivity is declared via `@` prefixed HTML attributes (with `data-he-*` aliases for HTML validation)
@@ -52,7 +54,9 @@ HTML parsed → processElements() registers bindings → expressions compiled (c
 
 ### File Structure
 
-- `helium.js` / `helium-lite.js` / `helium-csp.js` - Browser-ready source builds
+- `helium.js` - Canonical shared runtime plus Standard-only marked sections
+- `helium-lite.js` - Generated browser-ready core; never edit directly
+- `helium-csp.js` - CSP expression-engine wrapper around Standard
 - `helium-sse.js` / `helium-csp-sse.js` - Optional SSE entry points
 - `dist/*.min.js` - Generated minified, self-contained production builds
 - `jexpr.js` - CSP expression parser
@@ -76,6 +80,7 @@ app.unmount();
 | Directive | Purpose |
 |-----------|---------|
 | `@data` | Initialize state: `@data="{ count: 0 }"` |
+| `@scope` | Standard/CSP only: declare reactive state local to an element subtree |
 | `@text` | Bind text content |
 | `@html` | Bind HTML content (use with caution for XSS) |
 | `@for` + `:key` | Keyed `<template>` iteration in Standard/CSP; excluded from Lite |
@@ -106,6 +111,7 @@ Available in expressions: `$` (querySelector), `$el`, `$event`, `$data`, `$html`
 - **CSP**: Standard and Lite require `unsafe-eval`. Use `@daz4126/helium/csp` under a strict policy.
 - **Idiomorph integration**: If Idiomorph is loaded, Helium automatically uses it for efficient DOM morphing
 - **Turbo/Hotwire**: Automatic integration via `turbo:before-render` and `turbo:render` events
+- **Local state**: Standard/CSP `@scope="{ count: 0 }"` shadows root values for one subtree; Lite remains global-state-only
 
 ## Creating Custom Variants
 

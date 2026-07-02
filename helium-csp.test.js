@@ -262,6 +262,21 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       expect(typeof state.amount).toBe('number');
     });
 
+    it('should two-way bind a nested path', async () => {
+      container.innerHTML = '<input @bind="user.name" /><span @text="user.name"></span>';
+      const state = await helium({ user: { name: 'Alice' } });
+      const input = container.querySelector('input');
+
+      expect(input.value).toBe('Alice');
+      input.value = 'Bob';
+      input.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(state.user.name).toBe('Bob');
+      expect(state['user.name']).toBeUndefined();
+      expect(container.querySelector('span').textContent).toBe('Bob');
+    });
+
     it('should handle checkbox binding', async () => {
       container.innerHTML = '<input type="checkbox" @bind="checked" />';
       const state = await helium({ checked: true });
@@ -536,6 +551,24 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
     });
   });
 
+  describe('@scope Directive', () => {
+    it('should isolate reactive local state with the CSP expression engine', async () => {
+      container.innerHTML = `
+        <div @scope="{ count: 2 }">
+          <button @click="count++"></button><span @text="count"></span>
+        </div>
+        <span id="root-count" @text="count"></span>
+      `;
+      const state = await helium({ count: 30 });
+
+      container.querySelector('button').click();
+
+      expect(container.querySelector('div span').textContent).toBe('3');
+      expect(container.querySelector('#root-count').textContent).toBe('30');
+      expect(state.count).toBe(30);
+    });
+  });
+
   describe('@calculate Directive', () => {
     it('should create computed properties', async () => {
       container.innerHTML = '<div @calculate:double="count * 2"></div><span @text="double"></span>';
@@ -775,6 +808,60 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       state.count = 5;
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').textContent).toBe('Count: 5');
+    });
+  });
+
+  describe('Expression Scope Hardening', () => {
+    it('should not expose capability-bearing globals to expressions', async () => {
+      container.innerHTML = `
+        <span id="doc" @text="document ? 'exposed' : 'blocked'"></span>
+        <span id="win" @text="window ? 'exposed' : 'blocked'"></span>
+        <span id="storage" @text="localStorage ? 'exposed' : 'blocked'"></span>
+        <span id="fetch" @text="fetch ? 'exposed' : 'blocked'"></span>
+        <span id="timer" @text="setTimeout ? 'exposed' : 'blocked'"></span>
+        <span id="cookie" @text="document.cookie || 'blocked'"></span>
+      `;
+      await helium({});
+      ['doc', 'win', 'storage', 'fetch', 'timer', 'cookie'].forEach(id =>
+        expect(container.querySelector('#' + id).textContent).toBe('blocked'));
+    });
+
+    it('should still expose safe builtins', async () => {
+      container.innerHTML = `
+        <span id="math" @text="Math.max(1, 2)"></span>
+        <span id="keys" @text="Object.keys(obj).length"></span>
+        <span id="num" @text="parseInt('42px')"></span>
+        <span id="json" @text="JSON.stringify(obj)"></span>
+      `;
+      await helium({ obj: { a: 1 } });
+      expect(container.querySelector('#math').textContent).toBe('2');
+      expect(container.querySelector('#keys').textContent).toBe('1');
+      expect(container.querySelector('#num').textContent).toBe('42');
+      expect(container.querySelector('#json').textContent).toBe('{"a":1}');
+    });
+
+    it('should expose globals opted in via allowGlobals and revoke them', async () => {
+      const fakeStorage = { getItem: () => 'stored!' };
+      helium.allowGlobals({ localStorage: fakeStorage });
+      container.innerHTML = '<span @text="localStorage.getItem(\'key\') || \'blocked\'"></span>';
+      await helium({});
+      expect(container.querySelector('span').textContent).toBe('stored!');
+
+      helium.allowGlobals({ localStorage: undefined });
+      heliumTeardown();
+      document.body.innerHTML = '';
+      container = document.createElement('div');
+      container.setAttribute('data-helium', '');
+      document.body.appendChild(container);
+      container.innerHTML = '<span @text="localStorage ? \'exposed\' : \'blocked\'"></span>';
+      await helium({});
+      expect(container.querySelector('span').textContent).toBe('blocked');
+    });
+
+    it('should let state shadow names of removed globals', async () => {
+      container.innerHTML = '<span @text="history.length"></span>';
+      await helium({ history: ['a', 'b', 'c'] });
+      expect(container.querySelector('span').textContent).toBe('3');
     });
   });
 

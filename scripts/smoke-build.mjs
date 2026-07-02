@@ -26,8 +26,8 @@ const exposeDOM = html => {
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
-async function smokeBinding(entry, teardown) {
-  const dom = exposeDOM('<main data-helium><span @text="count"></span><input @bind.lazy.trim.number="count"></main>');
+async function smokeBinding(entry, teardown, supportsScope) {
+  const dom = exposeDOM('<main data-helium><span @text="count"></span><input @bind.lazy.trim.number="count"><section @scope="{ count: 10 }"><button @click="count++"></button><b @text="count"></b></section></main>');
   const module = await import(`../dist/${entry}`);
   const state = await module.default({ count: 1 });
   const output = document.querySelector("span");
@@ -40,6 +40,12 @@ async function smokeBinding(entry, teardown) {
   if (state.count !== 2) throw new Error(`${entry} failed lazy binding`);
   input.dispatchEvent(new window.Event("change"));
   if (state.count !== 4) throw new Error(`${entry} failed trim/number binding`);
+  document.querySelector("button").click();
+  const expectedLocal = supportsScope ? "11" : "5";
+  const expectedRoot = supportsScope ? 4 : 5;
+  if (document.querySelector("b").textContent !== expectedLocal || state.count !== expectedRoot) {
+    throw new Error(`${entry} failed its expected state-scope behavior`);
+  }
   module[teardown]();
 
   const root = document.createElement("section");
@@ -100,9 +106,9 @@ async function smokeFor(entry) {
   dom.window.close();
 }
 
-await smokeBinding("helium.min.js", "defaultTeardown");
-await smokeBinding("helium-lite.min.js", "heliumTeardown");
-await smokeBinding("helium-csp.min.js", "heliumTeardown");
+await smokeBinding("helium.min.js", "defaultTeardown", true);
+await smokeBinding("helium-lite.min.js", "heliumTeardown", false);
+await smokeBinding("helium-csp.min.js", "heliumTeardown", true);
 await smokeFor("helium.min.js");
 await smokeFor("helium-csp.min.js");
 await smokeSSE("helium-sse.min.js", "defaultTeardown");

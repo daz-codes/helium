@@ -18,6 +18,7 @@ const isReactiveObject = v => {
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;
 };
+// @standard-start
 const parseFor = value => {
   const match = value.match(/^\s*([\w$]+)(?:\s*,\s*([\w$]+))?\s+in\s+(.+)$/);
   return match && isValidIdentifier(match[1]) && (!match[2] || isValidIdentifier(match[2]))
@@ -25,6 +26,7 @@ const parseFor = value => {
 };
 let SSEHandler = null;
 const registerSSE = handler => SSEHandler = handler;
+// @standard-end
 
 // Default expression engine using new Function()
 const defaultEngine = {
@@ -55,11 +57,13 @@ const defaultEngine = {
       $event: ctx.event,
       $el: ctx.el,
       $html: ctx.html,
+      // @standard-start
       $get: ctx.get,
       $post: ctx.post,
       $put: ctx.put,
       $patch: ctx.patch,
       $delete: ctx.del,
+      // @standard-end
       ...ctx.refs
     };
   }
@@ -68,7 +72,9 @@ const defaultEngine = {
 // Factory function to create helium with custom engine
 export function createHelium(options = {}) {
   const engine = options.engine ?? defaultEngine;
+  // @standard-start
   const configuredSSE = options.sse;
+  // @standard-end
   const configuredRoot = options.root;
 
   // Engine-aware expression parser (CSP-safe when using jexpr engine)
@@ -117,14 +123,18 @@ export function createHelium(options = {}) {
       processed: new WeakSet(),
       parentKeys: new WeakMap(),
       fnCache: new Map(),
-      proxyCache: new WeakMap(),
+      proxyCache: new WeakMap()
+      // @standard-start
+      ,
       scopes: new WeakMap()
+      // @standard-end
     };
     HELIUM.root = root;
 
     const $ = s => document.querySelector(s);
     const html = s => Object.assign(document.createElement("template"),{innerHTML:String(s).trim()}).content.firstChild
 
+    // @standard-start
     const update = (data,targets,actions,template) => {
       if (!isCurrent()) return [];
       const newTargets = [];
@@ -208,6 +218,7 @@ export function createHelium(options = {}) {
     const opts = o => typeof o === "string" ? { target: [o], action: [null] } : o;
     const get = (url, options={}) => ajax(url, "GET", opts(options));
     const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(method => (url, params, options={}) => ajax(url, method, opts(options), params));
+    // @standard-end
 
     // Track bindings currently being applied to prevent infinite recursion
     const applyingBindings = new Set();
@@ -290,32 +301,121 @@ export function createHelium(options = {}) {
     // Merge initial state
     Object.assign(state, initialState);
 
-    const scopeFor = el => {
+    // @standard-start
+    const scopesFor = (el, extraScope) => {
+      const scopes = extraScope ? [extraScope] : [];
       for (; el; el = el.parentNode) {
-        const scope = HELIUM.scopes.get(el);
-        if (scope) return scope;
+        const elementScopes = HELIUM.scopes.get(el);
+        if (elementScopes) scopes.push(...elementScopes.slice().reverse());
       }
+      return scopes;
     };
 
-    // Create scope for expression execution. A loop row overlays its local item
-    // and index aliases without copying or merging the root state.
-    const createScope = (el, event = {}, scopeState = state, localValues = scopeFor(el)?.[1]) => {
-      const scopedState = localValues ? new Proxy(scopeState, {
-        has: (target, prop) => Reflect.has(localValues, prop) || Reflect.has(target, prop),
-        get: (target, prop) => Reflect.has(localValues, prop) ? localValues[prop] : target[prop],
-        set: (target, prop, value) => Reflect.set(Reflect.has(localValues, prop) ? localValues : target, prop, value)
-      }) : scopeState;
+    const own = (values, prop) => Object.prototype.hasOwnProperty.call(values, prop);
+    const ownerFor = (scopes, prop) => scopes.find(scope => own(scope.values, prop));
+    const scopeToken = (scope, prop) => {
+      if (!scope.tokens.has(prop)) scope.tokens.set(prop, { scope, prop });
+      return scope.tokens.get(prop);
+    };
+    const trigger = dependency => {
+      HELIUM.bindings.get(dependency)?.forEach(safeApplyBinding);
+      HELIUM.bindings.get(ALL)?.forEach(safeApplyBinding);
+    };
+    const createLocalValues = (source, scope) => {
+      const target = { ...source };
+      const nested = new WeakMap();
+      const roots = new WeakMap();
+      const wrap = (value, rootKey) => {
+        if (!isReactiveObject(value)) return value;
+        let keys = roots.get(value);
+        if (!keys) roots.set(value, keys = new Set());
+        keys.add(rootKey);
+        if (nested.has(value)) return nested.get(value);
+        const proxy = new Proxy(value, {
+          get(target, prop, receiver) {
+            let child = Reflect.get(target, prop, receiver);
+            roots.get(target).forEach(key => child = wrap(child, key));
+            return child;
+          },
+          set(target, prop, value, receiver) {
+            const result = Reflect.set(target, prop, value, receiver);
+            roots.get(target).forEach(key => trigger(scopeToken(scope, key)));
+            return result;
+          }
+        });
+        nested.set(value, proxy);
+        return proxy;
+      };
+      return new Proxy(target, {
+        get(target, prop, receiver) {
+          return wrap(Reflect.get(target, prop, receiver), prop);
+        },
+        set(target, prop, value, receiver) {
+          const result = Reflect.set(target, prop, value, receiver);
+          trigger(scopeToken(scope, prop));
+          return result;
+        }
+      });
+    };
+    const createLocalScope = source => {
+      const scope = { values: null, tokens: new Map(), dependencies: null };
+      scope.values = createLocalValues(source, scope);
+      return scope;
+    };
+    const addScope = (el, scope) => HELIUM.scopes.set(el, [...(HELIUM.scopes.get(el) || []), scope]);
+    // @standard-end
+    const setStateValue = (el, prop, value) => {
+      // Dotted paths ("user.name") walk to the parent object through the
+      // reactive proxies, so the leaf assignment triggers bindings as usual.
+      const path = prop.split(".").map(s => s.trim());
+      const last = path.pop();
+      let target = state;
+      // @standard-start
+      const owner = ownerFor(scopesFor(el), path[0] ?? last);
+      if (owner) target = owner.values;
+      // @standard-end
+      for (const key of path) target = target?.[key];
+      if (!target || typeof target !== "object") {
+        console.error(`Helium: cannot set "${prop}" — "${path.join(".")}" is not an object`);
+        return false;
+      }
+      return Reflect.set(target, last, value);
+    };
+
+    // Standard overlays the nearest element scope on the mounted root; the
+    // generated Lite build leaves this as the root-only state view.
+    const createScope = (el, event = {}, scopeState = state, extraScope, accessed) => {
+      let scopedState = scopeState;
+      // @standard-start
+      const scopes = scopesFor(el, extraScope);
+      if (scopes.length) scopedState = new Proxy(scopeState, {
+          has: (target, prop) => !!ownerFor(scopes, prop) || Reflect.has(target, prop),
+          get: (target, prop, receiver) => {
+            const owner = ownerFor(scopes, prop);
+            if (!owner) return Reflect.get(target, prop, receiver);
+            const value = owner.values[prop];
+            accessed?.set(scopeToken(owner, prop), value);
+            return value;
+          },
+          set: (target, prop, value, receiver) => {
+            const owner = ownerFor(scopes, prop);
+            return owner ? Reflect.set(owner.values, prop, value) : Reflect.set(target, prop, value, receiver);
+          }
+        });
+      // @standard-end
       return engine.createScope({
         $,
         state: scopedState,
         event,
         el,
         html,
+        // @standard-start
         get,
         post,
         put,
         patch,
         del,
+        // @standard-end
         refs: Object.fromEntries(HELIUM.refs)
       });
     };
@@ -346,7 +446,12 @@ export function createHelium(options = {}) {
 
   const executeBinding = (b, event = {}, elCtx = b.el) => {
     const accessed = new Map();
-    scopeFor(b.el)?.[2].forEach(key => accessed.set(key, state[key]));
+    // @standard-start
+    scopesFor(b.el).forEach(scope => scope.dependencies?.forEach(key => accessed.set(
+      key,
+      typeof key === "string" ? state[key] : key.scope.values[key.prop]
+    )));
+    // @standard-end
     const wrap = (target, rootKey = null) => new Proxy(target, {
       has(target, prop) {
         return rootKey === null ? handler.has(target, prop) : Reflect.has(target, prop);
@@ -359,9 +464,21 @@ export function createHelium(options = {}) {
     });
 
     try {
-      const result = b.compiled.execute(createScope(elCtx, event, wrap(state)));
-      const tracked = [...accessed].filter(([key, value]) => state[key] === value).map(([key]) => key);
-      const keys = b.keys?.includes("*") ? [ALL] : tracked.concat(b.keys || []);
+      const result = b.compiled.execute(createScope(elCtx, event, wrap(state), null, accessed));
+      const tracked = [...accessed].filter(([key, value]) => {
+        // @standard-start
+        if (typeof key !== "string") return key.scope.values[key.prop] === value;
+        // @standard-end
+        return state[key] === value;
+      }).map(([key]) => key);
+      let explicitKeys = b.keys || [];
+      // @standard-start
+      explicitKeys = explicitKeys.map(key => {
+        const owner = ownerFor(scopesFor(b.el), key);
+        return owner ? scopeToken(owner, key) : key;
+      });
+      // @standard-end
+      const keys = b.keys?.includes("*") ? [ALL] : tracked.concat(explicitKeys);
       updateBindingDependencies(b, keys);
       return { ok: true, result };
     } catch (err) {
@@ -370,44 +487,46 @@ export function createHelium(options = {}) {
     }
   };
 
+  // @standard-start
   const renderFor = (b, value) => {
     const loop = b.loop, oldRows = loop[4], nextRows = new Map();
-    const parentScope = scopeFor(b.el);
     const items = Array.from(value || []);
 
     items.forEach((item, index) => {
-      const values = Object.create(parentScope?.[1] || null);
-      values[loop[0]] = item;
+      const values = { [loop[0]]: item };
       if (loop[1]) values[loop[1]] = index;
-      const key = loop[2].execute(createScope(b.el, {}, state, values));
+      const key = loop[2].execute(createScope(b.el, {}, state, createLocalScope(values)));
       if (nextRows.has(key)) return void console.error("Duplicate key:", key);
 
       let row = oldRows.get(key);
-      if (row) row[1] = values;
-      else {
+      if (row) {
+        row.scope.values[loop[0]] = item;
+        if (loop[1]) row.scope.values[loop[1]] = index;
+      } else {
         const clone = loop[3].cloneNode(true);
-        row = [[...clone.childNodes], values, b.dependencies];
+        row = { nodes: [...clone.childNodes], scope: createLocalScope(values) };
+        row.nodes.forEach(node => {
+          if (node.nodeType === 1) addScope(node, row.scope);
+        });
       }
-      row[2] = b.dependencies;
-      row[0].forEach(node => {
-        if (node.nodeType === 1) HELIUM.scopes.set(node, row);
-      });
+      row.scope.dependencies = b.dependencies;
       nextRows.set(key, row);
     });
 
     oldRows.forEach((row, key) => {
-      if (!nextRows.has(key)) row[0].forEach(node => {
+      if (!nextRows.has(key)) row.nodes.forEach(node => {
         if (node.nodeType === 1) cleanup(node);
         node.remove();
       });
     });
     loop[4] = nextRows;
     let cursor = b.el;
-    nextRows.forEach(row => row[0].forEach(node => {
+    nextRows.forEach(row => row.nodes.forEach(node => {
       if (cursor.nextSibling !== node) cursor.after(node);
       cursor = node;
     }));
   };
+  // @standard-end
 
   function applyBinding(b,e={},elCtx=b.el){
     const {el,prop,calc,isHiddenAttr}=b;
@@ -415,8 +534,10 @@ export function createHelium(options = {}) {
     delete b.initialExecution;
     if (!execution.ok) return;
     const r = execution.result;
+    // @standard-start
     if (b.loop) return renderFor(b, r);
-    if (calc) state[calc] = r
+    // @standard-end
+    if (calc) setStateValue(el, calc, r)
 
     if (prop==="innerHTML") {
       const content = Array.isArray(r)?r.join``:r;
@@ -472,7 +593,9 @@ export function createHelium(options = {}) {
         HELIUM.listeners.get(e)?.forEach(({receiver,event,handler}) => receiver.removeEventListener(event,handler));
         HELIUM.listeners.delete(e);
         HELIUM.processed.delete(e);  // allow reprocessing if the same node is re-inserted
+        // @standard-start
         HELIUM.scopes.delete(e);
+        // @standard-end
       });
       for (const [name, ref] of HELIUM.refs) {
         if (removed.has(ref)) HELIUM.refs.delete(name);
@@ -510,6 +633,7 @@ export function createHelium(options = {}) {
         return false;
       });
 
+      // @standard-start
       const importPromises = [];
 
       heElements.forEach((el) => {
@@ -541,20 +665,38 @@ export function createHelium(options = {}) {
       });
 
       if (importPromises.length > 0) await Promise.all(importPromises);
+      // @standard-end
       if (!isCurrent()) return { bindings: [], inits: [] };
 
       heElements.forEach(el => {
+        // @standard-start
+        const scopeAttr = el.getAttribute("@scope") ?? el.getAttribute("data-he-scope");
+        if (scopeAttr != null) {
+          try {
+            const values = compile(scopeAttr, true).execute(createScope(el));
+            if (!isReactiveObject(values) || Array.isArray(values)) {
+              console.warn("Helium @scope expects an object:", scopeAttr);
+            } else addScope(el, createLocalScope(values));
+          } catch (error) {
+            console.warn("Helium @scope error:", error.message);
+          }
+        }
+        // @standard-end
         HELIUM.processed.add(el);
 
         const attrs = el.attributes;
+        // @standard-start
         const execExpr = v => {
           const compiled = compile(v, true);
           const scope = createScope(el);
           return compiled.execute(scope);
         };
+        // @standard-end
         const inputType = el.type?.toLowerCase();
         const isCheckbox = inputType == "checkbox", isRadio = inputType == "radio", isSelect = el.tagName == "SELECT";
+        // @standard-start
         const forValue = el.getAttribute("@for") ?? el.getAttribute("data-he-for");
+        // @standard-end
 
         // Single loop through attributes with early skipping
         for (let i = 0; i < attrs.length; i++) {
@@ -562,11 +704,16 @@ export function createHelium(options = {}) {
 
           // Skip non-helium attributes early
           if (name[0] !== '@' && name[0] !== ':' && !name.startsWith('data-he')) continue;
+          // @standard-start
           if (name === ":key" && forValue != null) continue;
+          // @standard-end
 
           // Initialize state first if needed (skip reserved words, only if not already set)
-          const localValues = scopeFor(el)?.[1];
-          if (match(name, "text", "html", "bind") && isValidIdentifier(value) && !RESERVED.has(value) && !Reflect.has(localValues || {}, value) && state[value] == null) {
+          let hasLocalValue = false;
+          // @standard-start
+          hasLocalValue = !!ownerFor(scopesFor(el), value);
+          // @standard-end
+          if (match(name, "text", "html", "bind") && isValidIdentifier(value) && !RESERVED.has(value) && !hasLocalValue && state[value] == null) {
             state[value] = match(name, "bind") ? (el.type == "checkbox" ? el.checked : tryNum(el.value)) : tryNum(el.textContent);
           }
 
@@ -576,6 +723,8 @@ export function createHelium(options = {}) {
           if (match(name, "data") || name === 'data-he') {
             Object.assign(state, evalExpr(value));
           }
+          else if (match(name, "scope")) continue;
+          // @standard-start
           else if (match(name, "for")) {
             const spec = parseFor(value), keyExpr = el.getAttribute(":key");
             if (el.tagName !== "TEMPLATE" || !spec || !keyExpr) {
@@ -589,6 +738,7 @@ export function createHelium(options = {}) {
               });
             }
           }
+          // @standard-end
           else if (name.startsWith(":") || name.startsWith('data-he-attr:')) {
             const propName = name.startsWith(":") ? name.slice(1) : name.slice(13);
             deferredBindings.push({el, prop: propName, compiled: compile(value, true)});
@@ -604,7 +754,7 @@ export function createHelium(options = {}) {
             const prop = isCheckbox ? "checked" : "value";
             const toBound = v => (v = name.includes(".trim") ? v.trim() : v,
               name.includes(".number") && v !== "" && !isNaN(+v) ? +v : v);
-            const inputHandler = e => state[value] = isCheckbox ? e.target.checked : toBound(e.target.value);
+            const inputHandler = e => setStateValue(el, value, isCheckbox ? e.target.checked : toBound(e.target.value));
             el.addEventListener(event, inputHandler);
             if (!HELIUM.listeners.has(el)) HELIUM.listeners.set(el, []);
             HELIUM.listeners.get(el).push({receiver: el, event, handler: inputHandler});
@@ -619,7 +769,11 @@ export function createHelium(options = {}) {
           }
           else if (match(name, "calculate")) {
             const calcName = name.split(":")[1];
-            if (!(calcName in state)) state[calcName] = undefined;  // Initialize so other bindings can reference it
+            let calcOwner = null;
+            // @standard-start
+            calcOwner = ownerFor(scopesFor(el), calcName);
+            // @standard-end
+            if (!calcOwner && !(calcName in state)) state[calcName] = undefined;  // Initialize so other bindings can reference it
             deferredBindings.push({el, calc: calcName, prop: null, compiled: compile(value, true)});
           }
           else if (match(name, "effect")) {
@@ -631,8 +785,11 @@ export function createHelium(options = {}) {
           else if (name.startsWith("@") || name.startsWith('data-he')) {
             const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
             const [eventName, ...mods] = fullName.split(".");
+            let event = eventName;
+            // @standard-start
             const isHttpMethod = ["get", "post", "put", "patch", "delete"].includes(eventName);
-            const event = isHttpMethod ? getEvent(el) : eventName;
+            if (isHttpMethod) event = getEvent(el);
+            // @standard-end
             const receiver = mods.includes("outside") || mods.includes("document") ? document : el;
             const debounceMod = mods.find(m => m.startsWith("debounce"));
             const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
@@ -650,6 +807,7 @@ export function createHelium(options = {}) {
                 }
               }
               if (mods.includes("outside") && el.contains(e.target)) return;
+              // @standard-start
               if (isHttpMethod) {
                   const getAttr = a => el.getAttribute('data-he-' + a) || el.getAttribute('@' + a);
                   // Only build target/action when a @target is actually present —
@@ -680,7 +838,9 @@ export function createHelium(options = {}) {
                   // Fire-and-forget from an attribute handler: log failures here.
                   ajax(value, eventName.toUpperCase(), options, params)
                     .catch(err => console.error("AJAX:", err.message));
-              } else {
+              } else
+              // @standard-end
+              {
                 const scope = createScope(el, e);
                 const compiled = compile(value, true);
                 // Inline expressions may return a promise (e.g. $get/$post);
@@ -719,7 +879,7 @@ export function createHelium(options = {}) {
           if (n.nodeType === 1 && root.contains(n) && !HELIUM.processed.has(n)) {
             const { bindings, inits } = await processElements(n);
             if (!root.contains(n)) continue;
-            bindings.forEach(applyBinding);
+            bindings.forEach(binding => applyBinding(binding));
             runInits(inits);
           }
         }
@@ -733,7 +893,7 @@ export function createHelium(options = {}) {
     if (!isCurrent()) return state;
     // Merge saved values after @data defaults, so localStorage takes priority
     if (savedState) Object.assign(state, savedState);
-    initialBindings.forEach(applyBinding);
+    initialBindings.forEach(binding => applyBinding(binding));
     runInits(inits);
 
     return state;
@@ -763,7 +923,9 @@ export function createHelium(options = {}) {
 const { helium: runDefaultHelium, heliumTeardown: _defaultTeardown, mount: runDefaultMount } = createHelium();
 
 // Flag to disable default auto-init (used by helium-csp.js and other variants)
+// @standard-start
 let defaultDisabled = false;
+// @standard-end
 let defaultInitialized = false;
 let defaultAutoTimer = null;
 
@@ -795,6 +957,7 @@ function defaultTeardown() {
 }
 
 // Variants such as the CSP build replace the default instance entirely.
+// @standard-start
 function disableDefault() {
   defaultDisabled = true;
   defaultInitialized = true;
@@ -802,6 +965,7 @@ function disableDefault() {
   defaultAutoTimer = null;
   _defaultTeardown();
 }
+// @standard-end
 
 // Setup browser globals and auto-initialization
 if (typeof window !== 'undefined') {
@@ -825,6 +989,7 @@ if (typeof document !== 'undefined') {
     // before automatic initialization runs.
     defaultAutoTimer = setTimeout(autoInit, 0);
   }
+  // @standard-start
   // Turbo integration
   // Use the non-disabling teardown so Helium can re-initialize on turbo:render.
   // disableDefault() is reserved for variants such as CSP that intentionally
@@ -836,6 +1001,7 @@ if (typeof document !== 'undefined') {
     }
   });
   document.addEventListener("turbo:render",_ => !defaultDisabled && defaultHelium());
+  // @standard-end
 }
 
 export { defaultTeardown, disableDefault, registerSSE };

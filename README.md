@@ -18,7 +18,7 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 Helium is designed for developers who want:
 
-- **Lightweight** - About 3.5–10.5KB minified and gzipped, depending on the build
+- **Lightweight** - About 3.9–10.9KB minified and gzipped, depending on the build
 - **Powerful** - Declarative JavaScript in your HTML
 - **Zero build step** - Works directly in the browser with no compiling
 - **Easy to learn** - If you know HTML and basic JavaScript, you're ready
@@ -31,7 +31,7 @@ Helium comes in three core versions, with SSE available as an optional add-on, s
 
 The full-featured version with everything included.
 
-- All directives (`@text`, `@html`, `@for`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`, etc.)
+- All directives (`@text`, `@html`, `@for`, `@bind`, `@data`, `@scope`, `@ref`, `@calculate`, `@effect`, `@init`, etc.)
 - Event handlers with modifiers
 - HTTP requests (`@get`, `@post`, `@put`, `@patch`, `@delete`)
 - Module imports (`@import`)
@@ -50,7 +50,8 @@ A slimmed-down version with just the core reactivity features.
 
 - Core directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`)
 - Event handlers with modifiers
-- No keyed `@for`, HTTP requests, imports, SSE, or Turbo integration
+- One global state namespace
+- No `@scope`, keyed `@for`, HTTP requests, imports, SSE, or Turbo integration
 
 **Best for:** Simple interactive pages where you only need reactivity and don't need server communication or module imports.
 
@@ -72,6 +73,26 @@ Because expressions run through a custom parser rather than the JS engine, a cou
 - No `new` keyword — use the `$Date(...)` and `$FormData(...)` helpers instead
 - Expressions are single expressions, not arbitrary statements
 
+Expressions also run in a **restricted scope**: only side-effect-free builtins
+(`Math`, `Date`, `JSON`, `Object`, `Array`, `parseInt`, `URL`, and friends) are
+available. Capability-bearing globals — `window`, `document`, `fetch`,
+`localStorage`, `sessionStorage`, `navigator`, `location`, `history`, timers,
+and dialogs — are not reachable from expressions, so markup injected by an
+attacker can't use them to read cookies or storage. If a page legitimately
+needs one, opt in explicitly by passing the reference:
+
+```javascript
+import helium, { allowGlobals } from "@daz4126/helium/csp";
+
+allowGlobals({ localStorage, fetch });      // expose to expressions
+allowGlobals({ fetch: undefined });         // revoke again
+```
+
+(`helium.allowGlobals(...)` works too when using the global script build.)
+Note this reduces the attack surface but is not a sandbox: the `$get`/`$post`
+helpers and `$`/`$el`/`$html` magics remain available to any expression that
+can run at all.
+
 **Best for:** Projects with strict Content Security Policies that prohibit `unsafe-eval`.
 
 ```javascript
@@ -83,6 +104,7 @@ import helium from "@daz4126/helium/csp"
 | Feature | Standard | Lite | CSP |
 |---------|----------|------|-----|
 | Core directives | ✅ | ✅ | ✅ |
+| Element-local `@scope` | ✅ | ❌ | ✅ |
 | Keyed `@for` | ✅ | ❌ | ✅ |
 | Event handlers | ✅ | ✅ | ✅ |
 | HTTP requests | ✅ | ❌ | ✅ |
@@ -90,11 +112,15 @@ import helium from "@daz4126/helium/csp"
 | SSE | Add-on | ❌ | Add-on |
 | Turbo integration | ✅ | ❌ | ✅ |
 | CSP safe | ❌ | ❌ | ✅ |
-| Approx. min+gzip size | 5.99KB | 3.50KB | 10.07KB |
+| Approx. min+gzip size | 6.49KB | 3.93KB | 10.56KB |
 
 Sizes are enforced against the production Terser builds with gzip level 9. The
-CSP figure includes its expression parser. Adding SSE produces 6.37KB Standard
-and 10.45KB CSP bundles.
+CSP figure includes its expression parser. Adding SSE produces 6.86KB Standard
+and 10.94KB CSP bundles.
+
+Lite is generated from the same global-state reactive core as Standard. It has
+identical deep/shared reactivity, lifecycle, binding, and cleanup behavior, but
+intentionally excludes element-local scopes and Standard's other extensions.
 
 ## Installation
 
@@ -288,6 +314,13 @@ Works with:
 - Radio buttons (binds to `value`, checking the one that matches)
 - Select elements (binds to `value`)
 
+Nested paths work too — the parent object must already exist in state:
+
+```html
+<input @bind="user.name">
+<p @text="user.name"></p>
+```
+
 **Examples:**
 ```html
 <!-- Text input -->
@@ -372,6 +405,50 @@ You can then use these variables in other Helium attributes:
 ```
 
 **Alias:** `data-he-data`
+
+### @scope (Standard/CSP)
+
+Creates reactive state owned by an element and its descendants. Scoped names
+shadow root state without changing the object returned by `helium()`:
+
+```html
+<main @data="{ count: 100 }">
+  <section @scope="{ count: 0, open: false }">
+    <button @click="count++">Increment local count</button>
+    <button @click="open = !open">Toggle</button>
+    <p @text="count"></p>
+    <p @visible="open">Local content</p>
+  </section>
+
+  <p @text="count"></p> <!-- Still 100 -->
+</main>
+```
+
+The scope expression runs once in its parent context, so defaults can use outer
+values. Nested scopes inherit outer names, and assignment updates the nearest
+scope that declares that name:
+
+```html
+<div @scope="{ count: startingCount, label: 'outer' }">
+  <div @scope="{ label: 'inner' }">
+    <button @click="count++">Updates the outer local count</button>
+    <span @text="label"></span> <!-- inner -->
+  </div>
+</div>
+```
+
+Declare every name that should remain local. Assigning an undeclared name keeps
+the existing Helium behavior and writes to root state. The same applies to
+`@bind` and `@calculate` targets: declare their target names in `@scope` when
+they should be local. Inside the subtree, `$data` is the scoped state view.
+Local values are not included in root `@local-storage` persistence.
+
+`@data` continues to merge into root state; it has not changed semantics.
+
+**Alias:** `data-he-scope`
+
+`@scope` is intentionally excluded from Lite, which always uses one global
+state namespace per mounted root.
 
 ### @ref
 
@@ -1375,10 +1452,36 @@ intentionally absent (or still on the roadmap). Current gaps:
 
 ### Roadmap
 
-- **Request cancellation** with `AbortController` and explicit success/error hooks.
-- **Real-browser CI** covering CSP, Turbo, SSE, late imports, and package exports.
-- **A generated shared core** for Standard/Lite/CSP to prevent feature drift
-  between the three builds.
+Ordered by recommended implementation sequence:
+
+1. **Improve expression-compilation diagnostics** — emit a useful `console.warn`
+   containing the expression and build/engine context instead of silently
+   treating every compile failure as a literal value.
+2. **Add real-browser CI** covering CSP, Turbo, SSE, focus preservation, late
+   imports, generated Lite output, and package exports before adding more DOM
+   lifecycle behavior.
+3. **Document function and `this` context limitations** alongside the existing
+   magic-variable guidance, with correct patterns for passing `$data`, `$el`,
+   and other context explicitly.
+4. **Add opt-in required-CSRF validation for POST/PUT/PATCH** — fail before the
+   request when an application declares that a token is mandatory, without
+   breaking tokenless APIs and cross-origin requests.
+5. **Add request cancellation and explicit success/error hooks** using
+   `AbortController`; define the request lifecycle before expanding loading and
+   error-state APIs.
+6. **Document a form-validation pattern first**, using native constraint
+   validation and Helium state; add helpers only if examples reveal recurring
+   boilerplate.
+7. **Create a complete error-state example** covering validation, HTTP failure,
+   retry, accessible messaging, and clearing stale errors.
+8. **Complete HTTP loading-state lifecycle behavior** — `@loading` already
+   exists, so define consistent success, error, cancellation, and restoration
+   behavior rather than adding a second loading mechanism.
+9. **Add debounced two-way binding updates if needed** after reproducing a real
+    feedback/caret loop; event-handler debouncing already covers ordinary input
+    throttling.
+10. **Add a minimal watch/middleware system** together with a clear size budget;
+    avoid adopting Alpine-scale surface area without demonstrated use cases.
 
 ## Contributing
 
@@ -1391,6 +1494,11 @@ Helium is open source! Contributions, issues, and feature requests are welcome.
 Before submitting a change, run `npm run check`. It executes the full test
 suite, creates the production bundles, and fails if any gzip size budget is
 exceeded. `npm run size` also reports raw, gzip, and Brotli sizes.
+
+`helium.js` contains the shared runtime plus sections marked Standard-only.
+`npm run generate` derives `helium-lite.js`; do not edit the generated Lite file
+directly. Standard keeps keyed lists, HTTP, imports, and Turbo, while SSE remains
+an optional module.
 
 ## License
 

@@ -220,6 +220,49 @@ describe('Helium Reactive Library', () => {
       expect(state.amount).toBe(42);
       expect(typeof state.amount).toBe('number');
     });
+
+    it('should two-way bind a nested path', async () => {
+      container.innerHTML = '<input @bind="user.name" /><span @text="user.name"></span>';
+      const state = await helium({ user: { name: 'Alice' } });
+      const input = container.querySelector('input');
+
+      expect(input.value).toBe('Alice');
+      input.value = 'Bob';
+      input.dispatchEvent(new Event('input'));
+
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.user.name).toBe('Bob');
+      expect(state['user.name']).toBeUndefined();
+      expect(container.querySelector('span').textContent).toBe('Bob');
+    });
+
+    it('should two-way bind a deeply nested path', async () => {
+      container.innerHTML = '<input @bind="user.address.city" /><span @text="user.address.city"></span>';
+      const state = await helium({ user: { address: { city: 'Paris' } } });
+      const input = container.querySelector('input');
+
+      input.value = 'Berlin';
+      input.dispatchEvent(new Event('input'));
+
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.user.address.city).toBe('Berlin');
+      expect(container.querySelector('span').textContent).toBe('Berlin');
+    });
+
+    it('should log an error when a nested path parent is missing', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      container.innerHTML = '<input @bind="missing.name" />';
+      const state = await helium({});
+      const input = container.querySelector('input');
+
+      input.value = 'Bob';
+      input.dispatchEvent(new Event('input'));
+
+      await new Promise(r => setTimeout(r, 0));
+      expect(state['missing.name']).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('cannot set'));
+      errorSpy.mockRestore();
+    });
   });
 
   describe('Directives - @hidden and @visible', () => {
@@ -517,6 +560,140 @@ describe('Helium Reactive Library', () => {
       container.innerHTML = '<div @data="{ user: \'Alice\', age: 30 }"></div><span @text="user"></span>';
       await helium({});
       expect(container.querySelector('span').textContent).toBe('Alice');
+    });
+  });
+
+  describe('@scope Directive', () => {
+    it('should isolate local state from root state and sibling scopes', async () => {
+      container.innerHTML = `
+        <section id="first" @scope="{ count: 0 }">
+          <button @click="count++"></button><span @text="count"></span>
+        </section>
+        <section id="second" @scope="{ count: 10 }">
+          <button @click="count++"></button><span @text="count"></span>
+        </section>
+        <span id="root-count" @text="count"></span>
+      `;
+      const state = await helium({ count: 100 });
+
+      container.querySelector('#first button').click();
+
+      expect(container.querySelector('#first span').textContent).toBe('1');
+      expect(container.querySelector('#second span').textContent).toBe('10');
+      expect(container.querySelector('#root-count').textContent).toBe('100');
+      expect(state.count).toBe(100);
+    });
+
+    it('should inherit outer values and assign to the nearest declaring scope', async () => {
+      container.innerHTML = `
+        <section @scope="{ count: 1, label: 'outer' }">
+          <span id="outer-count" @text="count"></span>
+          <div @scope="{ label: 'inner' }">
+            <button id="increment" @click="count++"></button>
+            <button id="rename" @click="label = 'changed'"></button>
+            <span id="inner-count" @text="count"></span>
+            <span id="inner-label" @text="label"></span>
+          </div>
+        </section>
+      `;
+      const state = await helium({ count: 50, label: 'root' });
+
+      container.querySelector('#increment').click();
+      container.querySelector('#rename').click();
+
+      expect(container.querySelector('#outer-count').textContent).toBe('2');
+      expect(container.querySelector('#inner-count').textContent).toBe('2');
+      expect(container.querySelector('#inner-label').textContent).toBe('changed');
+      expect(state).toMatchObject({ count: 50, label: 'root' });
+    });
+
+    it('should react to deep local mutations, @bind, and local @calculate values', async () => {
+      container.innerHTML = `
+        <section @scope="{ user: { name: 'Ada' }, name: 'Ada', quantity: 2, total: 0 }">
+          <input @bind="name">
+          <button @click="user.name = 'Grace', quantity++"></button>
+          <i @calculate:total="quantity * 5"></i>
+          <span id="name" @text="user.name"></span>
+          <span id="bound-name" @text="name"></span>
+          <span id="total" @text="total"></span>
+        </section>
+      `;
+      const state = await helium({ user: { name: 'Root' }, name: 'Root', quantity: 20, total: 100 });
+
+      container.querySelector('button').click();
+      const input = container.querySelector('input');
+      input.value = 'Katherine';
+      input.dispatchEvent(new Event('input'));
+
+      expect(container.querySelector('#name').textContent).toBe('Grace');
+      expect(container.querySelector('#bound-name').textContent).toBe('Katherine');
+      expect(container.querySelector('#total').textContent).toBe('15');
+      expect(state).toMatchObject({ user: { name: 'Root' }, name: 'Root', quantity: 20, total: 100 });
+    });
+
+    it('should two-way bind a nested path against local scope values', async () => {
+      container.innerHTML = `
+        <section @scope="{ user: { name: 'Ada' } }">
+          <input @bind="user.name">
+          <span @text="user.name"></span>
+        </section>
+      `;
+      const state = await helium({ user: { name: 'Root' } });
+
+      const input = container.querySelector('input');
+      expect(input.value).toBe('Ada');
+      input.value = 'Grace';
+      input.dispatchEvent(new Event('input'));
+
+      expect(container.querySelector('span').textContent).toBe('Grace');
+      expect(state).toMatchObject({ user: { name: 'Root' } });
+    });
+
+    it('should support data-he-scope and initialize from parent state', async () => {
+      container.innerHTML = `
+        <div data-he-scope="{ count: startingCount }">
+          <button @click="count++"></button><span @text="count"></span>
+        </div>
+      `;
+      const state = await helium({ startingCount: 4 });
+
+      container.querySelector('button').click();
+
+      expect(container.querySelector('span').textContent).toBe('5');
+      expect(state.startingCount).toBe(4);
+      expect(state.count).toBeUndefined();
+    });
+
+    it('should initialize scoped bindings added dynamically', async () => {
+      const state = await helium({ count: 40 });
+      const section = document.createElement('section');
+      section.setAttribute('data-he-scope', '{ count: 3 }');
+      section.innerHTML = '<button @click="count++"></button><span @text="count"></span>';
+
+      container.appendChild(section);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      section.querySelector('button').click();
+
+      expect(section.querySelector('span').textContent).toBe('4');
+      expect(state.count).toBe(40);
+    });
+
+    it('should compose local state with keyed @for row scopes', async () => {
+      container.innerHTML = `
+        <section @scope="{ suffix: 'local', items: [{ id: 1, name: 'one' }] }">
+          <template @for="item in items" :key="item.id">
+            <p @text="item.name + '-' + suffix"></p>
+          </template>
+          <button @click="items = [...items, { id: 2, name: 'two' }]"></button>
+        </section>
+      `;
+      const state = await helium({ suffix: 'root', items: [] });
+
+      container.querySelector('button').click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect([...container.querySelectorAll('p')].map(el => el.textContent)).toEqual(['one-local', 'two-local']);
+      expect(state).toMatchObject({ suffix: 'root', items: [] });
     });
   });
 
