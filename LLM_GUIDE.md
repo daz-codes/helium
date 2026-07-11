@@ -8,8 +8,8 @@ HTML through attributes and runs directly in the browser without compilation.
 - Use `@directive` or its `data-he-directive` alias.
 - Define initial state with `@data` / `data-he-data`, or pass it to `helium({...})`.
 - Use `@text` for plain text and `@html` only for trusted or sanitized HTML.
-- `@data` merges into mounted root state. In Standard/CSP, use `@scope` for
-  reactive state owned by one element subtree. Lite always uses root state.
+- In Standard/CSP, root `@data` initializes mounted root state and nested
+  `@data` creates element-local state. Lite always uses root state.
 
 ```html
 <main data-helium @data="{ count: 0, name: 'Helium' }">
@@ -44,14 +44,19 @@ mounted roots.
 <div @html="trustedHtml"></div>
 ```
 
-- `@data` / `data-he-data`: merge an object into state.
-- `@scope` / `data-he-scope`: Standard/CSP only; declare element-local state.
-  Scoped keys shadow root state; undeclared assignments still write to root.
+- `@data` / `data-he-data`: declare root state when used on the mounted root;
+  in Standard/CSP, nested `@data` declares element-local state. Lite treats all
+  `@data` as root state.
 - `@text` / `data-he-text`: set `textContent` reactively.
 - `@html` / `data-he-html`: set `innerHTML` reactively.
 - `@for` / `data-he-for`: Standard/CSP keyed iteration on a `<template>`; use
   `:key` with a stable unique value. It is not included in Lite.
-- `@hidden` / `@visible`: toggle the element's `hidden` property.
+- `@if` / `data-he-if`: Standard/CSP conditional rendering of a `<template>`'s
+  content. Truthy inserts, falsy removes and cleans up (listeners, bindings,
+  `@init` cleanup). Not included in Lite; not combinable with `@for` on the
+  same template — nest templates instead.
+- `@hidden` / `@visible`: toggle the element's `hidden` property. Unlike
+  `@if`, the content stays in the DOM and its bindings stay live.
 
 ### Keyed lists (Standard/CSP)
 
@@ -72,7 +77,7 @@ moving keyed rows and runs row cleanup when a key is removed.
 ### Element-local state (Standard/CSP)
 
 ```html
-<section @scope="{ count: initialCount, total: 0 }">
+<section @data="{ count: initialCount, total: 0 }">
   <button @click="count++">Increment</button>
   <span @text="count"></span>
   <i @calculate:total="count * 2"></i>
@@ -80,13 +85,13 @@ moving keyed rows and runs row cleanup when a key is removed.
 </section>
 ```
 
-The object is evaluated once against the parent scope. A scoped key is visible
-on the declaring element and below it. Nested scopes inherit outer values and
-writes target the nearest scope that declares the key. Declare `@bind` and
+The object is evaluated once against the parent scope. A local key is visible on
+the declaring element and below it. Nested data objects inherit outer values and
+writes target the nearest data object that declares the key. Declare `@bind` and
 `@calculate` targets in the object when they should stay local. `$data` exposes
 the scoped view inside the subtree; the state returned by `helium()` remains the
-root state and does not contain local values. Lite ignores `@scope` and resolves
-all names against its mounted root state.
+root state and does not contain local values. Lite resolves all names against
+its mounted root state.
 
 ### Two-way binding
 
@@ -186,7 +191,7 @@ them; pass required values explicitly, such as `save($data, $form)`.
 
 - Standard: complete core API and native JavaScript expressions; requires
   `unsafe-eval` under CSP.
-- Lite: the shared Helium global-state reactive core without `@scope`, keyed
+- Lite: the shared Helium global-state reactive core without local `@data`, keyed
   `@for`, HTTP, imports, Turbo, or SSE; also requires `unsafe-eval`.
 - CSP: complete directives and server features without `unsafe-eval`, using a
   custom single-expression parser. It does not support arbitrary statements or
@@ -200,5 +205,5 @@ them; pass required values explicitly, such as `save($data, $form)`.
 
 ## Current limitations
 
-There is no DOM-removing `@if`, `$watch`, `$nextTick`, or cross-root shared
-store. Use `@hidden` or `@visible` for conditional visibility.
+There is no `$watch`, `$nextTick`, or cross-root shared store. `@effect` with
+explicit keys covers most `$watch` use cases.

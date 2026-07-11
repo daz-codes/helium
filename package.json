@@ -32,11 +32,14 @@
     "size": "npm run build && node scripts/size.mjs",
     "size:check": "npm run build && node scripts/size.mjs --check",
     "check": "npm run test:run && npm run size:check && npm run test:dist",
+    "check:ci": "npm run check && npm run test:browser",
     "pretest": "npm run generate",
     "test": "vitest",
     "test:ui": "npm run generate && vitest --ui",
     "test:run": "npm run generate && vitest run",
     "test:dist": "node scripts/smoke-build.mjs",
+    "test:browser": "npm run build && node scripts/browser-smoke.mjs",
+    "bench": "npm run build && node scripts/benchmark.mjs",
     "prepack": "npm run size:check && npm run test:dist"
   },
   "keywords": [
@@ -58,6 +61,8 @@
   },
   "homepage": "https://github.com/daz-codes/helium#readme",
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "alpinejs": "^3.15.12",
     "esbuild": "^0.28.1",
     "jsdom": "^27.0.1",
     "terser": "^5.48.0",

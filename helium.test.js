@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import helium from './helium-sse.js';
 
+// State changes are batched and applied on a microtask; a macrotask tick also
+// lets MutationObserver-driven processing of structural content settle.
+const tick = () => new Promise(r => setTimeout(r, 0));
+
 describe('Helium Reactive Library', () => {
   let container;
 
@@ -38,10 +42,12 @@ describe('Helium Reactive Library', () => {
       expect(container.querySelector('div').textContent).toBe('A');
       state.show = false;
       state.b = 'updated B';
+      await tick();
       expect(container.querySelector('div').textContent).toBe('updated B');
 
       state.show = true;
       state.a = 'updated A';
+      await tick();
       expect(container.querySelector('div').textContent).toBe('updated A');
     });
 
@@ -141,6 +147,24 @@ describe('Helium Reactive Library', () => {
       container.innerHTML = '<div @text="count * 2"></div>';
       await helium({ count: 5 });
       expect(container.querySelector('div').textContent).toBe('10');
+    });
+
+    it('should keep plain malformed strings quiet but warn for expression-like compile failures', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      container.innerHTML = `
+        <span id="literal" @text="Loading..."></span>
+        <span id="punctuation" @text="Hello! Error: missing"></span>
+        <span id="broken" @text="user.name."></span>
+      `;
+      await helium({});
+
+      expect(container.querySelector('#literal').textContent).toBe('Loading...');
+      expect(container.querySelector('#punctuation').textContent).toBe('Hello! Error: missing');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('Helium expression compile warning');
+      expect(warnSpy.mock.calls[0][0]).toContain('@text');
+      expect(warnSpy.mock.calls[0][1]).toBe('user.name.');
+      warnSpy.mockRestore();
     });
   });
 
@@ -313,6 +337,7 @@ describe('Helium Reactive Library', () => {
       const element = container.querySelector('div');
 
       state.classes = { active: false, current: true };
+      await tick();
 
       expect(element.classList.contains('base')).toBe(true);
       expect(element.classList.contains('active')).toBe(false);
@@ -429,6 +454,22 @@ describe('Helium Reactive Library', () => {
       container.querySelector('#outside').click();
       expect(state.count).toBe(1);
     });
+
+    it('should warn for event handler compile failures', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      container.innerHTML = '<button @click="count +"></button>';
+      await helium({ count: 1 });
+
+      container.querySelector('button').click();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Helium expression compile warning'),
+        'count +',
+        expect.any(String)
+      );
+      expect(warnSpy.mock.calls[0][0]).toContain('@click');
+      warnSpy.mockRestore();
+    });
   });
 
   describe('@ref Directive', () => {
@@ -475,13 +516,13 @@ describe('Helium Reactive Library', () => {
       expect(options.body).toBeInstanceOf(FormData);
     });
 
-    it('should make refs available with nested @data sections', async () => {
+    it('should make refs available with nested local @data sections', async () => {
       global.fetch = vi.fn().mockResolvedValueOnce({
         headers: { get: () => 'application/json' },
         json: async () => ({ success: true })
       });
 
-      // Mimic the examples page structure with nested @data
+      // Mimic the examples page structure with nested local @data
       container.innerHTML = `
         <div @data="{ count: 0 }">
           <div @data="{ templates: { post: data => data.title } }">
@@ -556,20 +597,20 @@ describe('Helium Reactive Library', () => {
   });
 
   describe('@data Directive', () => {
-    it('should merge data into state', async () => {
-      container.innerHTML = '<div @data="{ user: \'Alice\', age: 30 }"></div><span @text="user"></span>';
-      await helium({});
+    it('should merge root data into root state', async () => {
+      container.setAttribute('data-he-data', "{ user: 'Alice', age: 30 }");
+      container.innerHTML = '<span @text="user"></span>';
+      const state = await helium({});
       expect(container.querySelector('span').textContent).toBe('Alice');
+      expect(state.user).toBe('Alice');
     });
-  });
 
-  describe('@scope Directive', () => {
-    it('should isolate local state from root state and sibling scopes', async () => {
+    it('should isolate nested local state from root state and sibling data scopes', async () => {
       container.innerHTML = `
-        <section id="first" @scope="{ count: 0 }">
+        <section id="first" @data="{ count: 0 }">
           <button @click="count++"></button><span @text="count"></span>
         </section>
-        <section id="second" @scope="{ count: 10 }">
+        <section id="second" @data="{ count: 10 }">
           <button @click="count++"></button><span @text="count"></span>
         </section>
         <span id="root-count" @text="count"></span>
@@ -577,6 +618,7 @@ describe('Helium Reactive Library', () => {
       const state = await helium({ count: 100 });
 
       container.querySelector('#first button').click();
+      await tick();
 
       expect(container.querySelector('#first span').textContent).toBe('1');
       expect(container.querySelector('#second span').textContent).toBe('10');
@@ -584,11 +626,11 @@ describe('Helium Reactive Library', () => {
       expect(state.count).toBe(100);
     });
 
-    it('should inherit outer values and assign to the nearest declaring scope', async () => {
+    it('should inherit outer values and assign to the nearest declaring data object', async () => {
       container.innerHTML = `
-        <section @scope="{ count: 1, label: 'outer' }">
+        <section @data="{ count: 1, label: 'outer' }">
           <span id="outer-count" @text="count"></span>
-          <div @scope="{ label: 'inner' }">
+          <div @data="{ label: 'inner' }">
             <button id="increment" @click="count++"></button>
             <button id="rename" @click="label = 'changed'"></button>
             <span id="inner-count" @text="count"></span>
@@ -600,6 +642,7 @@ describe('Helium Reactive Library', () => {
 
       container.querySelector('#increment').click();
       container.querySelector('#rename').click();
+      await tick();
 
       expect(container.querySelector('#outer-count').textContent).toBe('2');
       expect(container.querySelector('#inner-count').textContent).toBe('2');
@@ -609,7 +652,7 @@ describe('Helium Reactive Library', () => {
 
     it('should react to deep local mutations, @bind, and local @calculate values', async () => {
       container.innerHTML = `
-        <section @scope="{ user: { name: 'Ada' }, name: 'Ada', quantity: 2, total: 0 }">
+        <section @data="{ user: { name: 'Ada' }, name: 'Ada', quantity: 2, total: 0 }">
           <input @bind="name">
           <button @click="user.name = 'Grace', quantity++"></button>
           <i @calculate:total="quantity * 5"></i>
@@ -624,6 +667,7 @@ describe('Helium Reactive Library', () => {
       const input = container.querySelector('input');
       input.value = 'Katherine';
       input.dispatchEvent(new Event('input'));
+      await tick();
 
       expect(container.querySelector('#name').textContent).toBe('Grace');
       expect(container.querySelector('#bound-name').textContent).toBe('Katherine');
@@ -631,9 +675,9 @@ describe('Helium Reactive Library', () => {
       expect(state).toMatchObject({ user: { name: 'Root' }, name: 'Root', quantity: 20, total: 100 });
     });
 
-    it('should two-way bind a nested path against local scope values', async () => {
+    it('should two-way bind a nested path against local data values', async () => {
       container.innerHTML = `
-        <section @scope="{ user: { name: 'Ada' } }">
+        <section @data="{ user: { name: 'Ada' } }">
           <input @bind="user.name">
           <span @text="user.name"></span>
         </section>
@@ -644,43 +688,46 @@ describe('Helium Reactive Library', () => {
       expect(input.value).toBe('Ada');
       input.value = 'Grace';
       input.dispatchEvent(new Event('input'));
+      await tick();
 
       expect(container.querySelector('span').textContent).toBe('Grace');
       expect(state).toMatchObject({ user: { name: 'Root' } });
     });
 
-    it('should support data-he-scope and initialize from parent state', async () => {
+    it('should support data-he-data for local state and initialize from parent state', async () => {
       container.innerHTML = `
-        <div data-he-scope="{ count: startingCount }">
+        <div data-he-data="{ count: startingCount }">
           <button @click="count++"></button><span @text="count"></span>
         </div>
       `;
       const state = await helium({ startingCount: 4 });
 
       container.querySelector('button').click();
+      await tick();
 
       expect(container.querySelector('span').textContent).toBe('5');
       expect(state.startingCount).toBe(4);
       expect(state.count).toBeUndefined();
     });
 
-    it('should initialize scoped bindings added dynamically', async () => {
+    it('should initialize local bindings added dynamically', async () => {
       const state = await helium({ count: 40 });
       const section = document.createElement('section');
-      section.setAttribute('data-he-scope', '{ count: 3 }');
+      section.setAttribute('data-he-data', '{ count: 3 }');
       section.innerHTML = '<button @click="count++"></button><span @text="count"></span>';
 
       container.appendChild(section);
       await new Promise(resolve => setTimeout(resolve, 0));
       section.querySelector('button').click();
+      await tick();
 
       expect(section.querySelector('span').textContent).toBe('4');
       expect(state.count).toBe(40);
     });
 
-    it('should compose local state with keyed @for row scopes', async () => {
+    it('should compose local state with keyed @for row data', async () => {
       container.innerHTML = `
-        <section @scope="{ suffix: 'local', items: [{ id: 1, name: 'one' }] }">
+        <section @data="{ suffix: 'local', items: [{ id: 1, name: 'one' }] }">
           <template @for="item in items" :key="item.id">
             <p @text="item.name + '-' + suffix"></p>
           </template>
@@ -1204,8 +1251,9 @@ describe('@calculate', () => {
       localStorage.setItem('test-todos', JSON.stringify({ todos: ['buy milk', 'walk dog'], filter: 'active', nextId: 3 }));
 
       container.setAttribute('data-he-local-storage', 'test-todos');
+      container.setAttribute('data-he-data', "{ todos: [], filter: 'all', nextId: 1 }");
       container.innerHTML = `
-        <div @data="{ todos: [], filter: 'all', nextId: 1 }">
+        <div>
           <span id="count" @text="todos.length"></span>
           <span id="filter" @text="filter"></span>
           <span id="nextId" @text="nextId"></span>
@@ -1225,8 +1273,9 @@ describe('@calculate', () => {
       localStorage.setItem('test-partial', JSON.stringify({ count: 42 }));
 
       container.setAttribute('data-he-local-storage', 'test-partial');
+      container.setAttribute('data-he-data', "{ count: 0, name: 'default' }");
       container.innerHTML = `
-        <div @data="{ count: 0, name: 'default' }">
+        <div>
           <span id="count" @text="count"></span>
           <span id="name" @text="name"></span>
         </div>
@@ -1241,8 +1290,9 @@ describe('@calculate', () => {
 
     it('should save state changes to localStorage', async () => {
       container.setAttribute('data-he-local-storage', 'test-save');
+      container.setAttribute('data-he-data', "{ count: 0 }");
       container.innerHTML = `
-        <div @data="{ count: 0 }">
+        <div>
           <button @click="count++">Inc</button>
           <span @text="count"></span>
         </div>
@@ -1260,8 +1310,9 @@ describe('@calculate', () => {
       localStorage.setItem('test-funcs', JSON.stringify({ count: 5 }));
 
       container.setAttribute('data-he-local-storage', 'test-funcs');
+      container.setAttribute('data-he-data', "{ count: 0, double(n) { return n * 2 } }");
       container.innerHTML = `
-        <div @data="{ count: 0, double(n) { return n * 2 } }">
+        <div>
           <span id="result" @text="double(count)"></span>
         </div>
       `;
@@ -1294,6 +1345,7 @@ describe('@calculate', () => {
       const b = await helium.mount(container.querySelector('#mount-b'), { count: 10 });
 
       container.querySelector('#mount-a button').click();
+      await tick();
       expect(a.state.count).toBe(2);
       expect(b.state.count).toBe(10);
       expect(container.querySelector('#mount-a span').textContent).toBe('2');
@@ -1303,6 +1355,7 @@ describe('@calculate', () => {
       a.unmount();
       a.state.count = 99;
       b.state.count = 11;
+      await tick();
 
       expect(container.querySelector('#mount-a span').textContent).toBe('2');
       expect(container.querySelector('#mount-b span').textContent).toBe('11');
@@ -1340,18 +1393,22 @@ describe('@calculate', () => {
       const focused = rowA.querySelector('button');
       focused.focus();
       state.items[0].name = 'Alpha+';
+      await tick();
       expect(document.activeElement).toBe(focused);
 
       state.items = [state.items[1], state.items[0]];
+      await tick();
       expect(container.querySelectorAll('li')[1]).toBe(rowA);
       expect([...container.querySelectorAll('button')].map(el => el.textContent)).toEqual(['0: Beta', '1: Alpha+']);
 
       container.querySelector('[data-id="b"] button').click();
+      await tick();
       expect(state.items[0].name).toBe('Beta!');
       expect(container.querySelector('[data-id="b"] button').textContent).toBe('0: Beta!');
 
       const rowB = container.querySelector('[data-id="b"]');
       state.items = [{ id: 'b', name: 'Replacement' }];
+      await tick();
       expect(container.querySelector('[data-id="b"]')).toBe(rowB);
       expect(rowB.querySelector('button').textContent).toBe('0: Replacement');
       expect(container.querySelector('[data-id="a"]')).toBeNull();
@@ -1369,6 +1426,110 @@ describe('@calculate', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
 
       expect(container.querySelector('[data-id="1"]').textContent).toBe('Added');
+    });
+  });
+
+  describe('Conditional @if', () => {
+    it('should render template content only while the expression is truthy', async () => {
+      container.innerHTML = `
+        <template @if="loggedIn"><p @text="'Hello ' + user"></p></template>
+      `;
+      const state = await helium({ loggedIn: false, user: 'Ada' });
+      expect(container.querySelector('p')).toBeNull();
+
+      state.loggedIn = true;
+      await new Promise(r => setTimeout(r, 0));
+      expect(container.querySelector('p').textContent).toBe('Hello Ada');
+
+      state.user = 'Grace';
+      await new Promise(r => setTimeout(r, 0));
+      expect(container.querySelector('p').textContent).toBe('Hello Grace');
+
+      state.loggedIn = false;
+      await tick();
+      expect(container.querySelector('p')).toBeNull();
+    });
+
+    it('should clean up listeners and @init effects when content is removed', async () => {
+      const cleaned = vi.fn();
+      container.innerHTML = `
+        <template @if="show">
+          <button @init="setup()" @click="count++">+</button>
+        </template>
+      `;
+      const state = await helium({ show: true, count: 0, setup: () => () => cleaned() });
+      await new Promise(r => setTimeout(r, 0));
+
+      const button = container.querySelector('button');
+      button.click();
+      expect(state.count).toBe(1);
+
+      state.show = false;
+      await tick();
+      expect(container.querySelector('button')).toBeNull();
+      expect(cleaned).toHaveBeenCalledTimes(1);
+      button.click();
+      expect(state.count).toBe(1);
+    });
+
+    it('should re-insert fresh, working content after toggling off and on', async () => {
+      container.innerHTML = `
+        <template @if="show"><span @text="count"></span></template>
+      `;
+      const state = await helium({ show: true, count: 1 });
+      await new Promise(r => setTimeout(r, 0));
+
+      state.show = false;
+      state.count = 2;
+      state.show = true;
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(container.querySelector('span').textContent).toBe('2');
+      state.count = 3;
+      await tick();
+      expect(container.querySelector('span').textContent).toBe('3');
+    });
+
+    it('should support data-he-if and multiple root nodes', async () => {
+      container.innerHTML = `
+        <template data-he-if="show"><b>one</b><i>two</i></template>
+      `;
+      const state = await helium({ show: true });
+      await new Promise(r => setTimeout(r, 0));
+      expect(container.querySelector('b').textContent).toBe('one');
+      expect(container.querySelector('i').textContent).toBe('two');
+
+      state.show = false;
+      await tick();
+      expect(container.querySelector('b')).toBeNull();
+      expect(container.querySelector('i')).toBeNull();
+    });
+
+    it('should see @for row aliases from inside a row', async () => {
+      container.innerHTML = `
+        <ul>
+          <template @for="item in items" :key="item.id">
+            <template @if="item.show"><li @text="item.name"></li></template>
+          </template>
+        </ul>
+      `;
+      await helium({ items: [
+        { id: 1, name: 'visible', show: true },
+        { id: 2, name: 'hidden', show: false }
+      ]});
+      await new Promise(r => setTimeout(r, 0));
+      await new Promise(r => setTimeout(r, 0));
+
+      const rows = [...container.querySelectorAll('li')];
+      expect(rows.map(li => li.textContent)).toEqual(['visible']);
+    });
+
+    it('should reject @if on non-template elements', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      container.innerHTML = '<div @if="show">nope</div>';
+      await helium({ show: true });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('@if requires'));
+      errorSpy.mockRestore();
     });
   });
 
@@ -1440,10 +1601,18 @@ describe('data-he-* aliases', () => {
     document.body.innerHTML = '';
   });
 
-  it('data-he-data should initialize state (alias for @data)', async () => {
-    container.innerHTML = '<div data-he-data="{ count: 7 }"><span @text="count"></span></div>';
+  it('root data-he-data should initialize root state', async () => {
+    container.setAttribute('data-he-data', "{ count: 7 }");
+    container.innerHTML = '<span @text="count"></span>';
     const state = await helium();
     expect(state.count).toBe(7);
+    expect(container.querySelector('span').textContent).toBe('7');
+  });
+
+  it('nested data-he-data should initialize local state', async () => {
+    container.innerHTML = '<div data-he-data="{ count: 7 }"><span @text="count"></span></div>';
+    const state = await helium();
+    expect(state.count).toBeUndefined();
     expect(container.querySelector('span').textContent).toBe('7');
   });
 

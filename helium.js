@@ -12,17 +12,52 @@ const isKeyMod = m => !FLAG_MODS.has(m) && !m.startsWith("debounce") && !KEY_MOD
 const STATE_FIRST_GLOBALS = new Set(["name", "length", "status", "top", "origin", "event", "closed", "parent"]);
 const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
 const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
+const looksLikeExpression = value => {
+  const v = String(value).trim();
+  return /=>|&&|\|\||\?\?/.test(v)
+    || /[()[\]{}]/.test(v)
+    || /(?:^|\s)[+\-*/%](?:\s|$)/.test(v)
+    || /(?:^|\s)(?:={1,3}|!==?|<=?|>=?)(?:\s|$)/.test(v)
+    || /\s\?\s/.test(v)
+    || /^\s*[`'"]|[`'"]\s*$/.test(v)
+    || /\b[$A-Za-z_][\w$]*\s*\.\s*(?:[$A-Za-z_][\w$]*|\s*$)/.test(v)
+    || /^[+-]{2}|[+-]{2}$/.test(v);
+};
 const isReactiveObject = v => {
   if (!v || typeof v !== "object") return false;
   if (Array.isArray(v)) return true;
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;
 };
+// Reading this symbol through any Helium proxy returns the underlying raw
+// object, so row diffing can compare identities across proxy layers.
+const RAW = Symbol("raw");
+const rawOf = v => (v && typeof v === "object" && v[RAW]) || v;
 // @standard-start
 const parseFor = value => {
   const match = value.match(/^\s*([\w$]+)(?:\s*,\s*([\w$]+))?\s+in\s+(.+)$/);
   return match && isValidIdentifier(match[1]) && (!match[2] || isValidIdentifier(match[2]))
     ? [match[1], match[2], match[3]] : null;
+};
+// Indices of a longest increasing subsequence of positions (-1 entries — new
+// rows — are never included). Rows on this subsequence keep their DOM order
+// between renders, so reordering only moves the rows off it: a swap moves two
+// rows instead of re-inserting everything after the first mismatch.
+const stableRowIndices = positions => {
+  const tails = [], prev = new Array(positions.length).fill(-1);
+  positions.forEach((pos, i) => {
+    if (pos === -1) return;
+    let lo = 0, hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      positions[tails[mid]] < pos ? lo = mid + 1 : hi = mid;
+    }
+    if (lo > 0) prev[i] = tails[lo - 1];
+    tails[lo] = i;
+  });
+  const stable = new Set();
+  for (let i = tails.length ? tails[tails.length - 1] : -1; i !== -1; i = prev[i]) stable.add(i);
+  return stable;
 };
 let SSEHandler = null;
 const registerSSE = handler => SSEHandler = handler;
@@ -30,6 +65,8 @@ const registerSSE = handler => SSEHandler = handler;
 
 // Default expression engine using new Function()
 const defaultEngine = {
+  diagnosticName: "standard",
+
   compile(expr, withReturn = true) {
     try {
       const fn = new Function(
@@ -42,10 +79,11 @@ const defaultEngine = {
         execute: (scope) => fn(scope),
         getIds: null  // Will use trackDependencies instead
       };
-    } catch {
+    } catch (error) {
       return {
         execute: () => expr,
-        getIds: null
+        getIds: null,
+        error
       };
     }
   },
@@ -72,6 +110,7 @@ const defaultEngine = {
 // Factory function to create helium with custom engine
 export function createHelium(options = {}) {
   const engine = options.engine ?? defaultEngine;
+  const engineName = engine.diagnosticName || "helium";
   // @standard-start
   const configuredSSE = options.sse;
   // @standard-end
@@ -123,7 +162,8 @@ export function createHelium(options = {}) {
       processed: new WeakSet(),
       parentKeys: new WeakMap(),
       fnCache: new Map(),
-      proxyCache: new WeakMap()
+      proxyCache: new WeakMap(),
+      warnedCompiles: new Set()
       // @standard-start
       ,
       scopes: new WeakMap()
@@ -233,6 +273,45 @@ export function createHelium(options = {}) {
       }
     };
 
+    // Batch binding updates into one microtask flush: a burst of synchronous
+    // mutations (state.a = 1; state.b = 2; item edits in a loop) runs each
+    // affected binding once instead of re-rendering per assignment. Cascades —
+    // a flushed binding writing more state, e.g. @calculate — are drained in
+    // the same flush; the pass guard bails out of infinite update loops.
+    let dirtyKeys = new Set();
+    // Raw objects mutated during the current burst; lets renderFor re-run only
+    // the rows whose item actually changed. Cleared when the flush drains.
+    let dirtyObjects = new Set();
+    let flushScheduled = false;
+    const flushBindings = () => {
+      let passes = 0;
+      while (dirtyKeys.size && isCurrent()) {
+        if (++passes > 100) {
+          dirtyKeys.clear();
+          console.error("Helium: infinite update loop — bindings kept writing state for 100 consecutive passes");
+          break;
+        }
+        const keys = dirtyKeys;
+        dirtyKeys = new Set();
+        // Computed/structural bindings (calc, loop, cond) run before plain ones,
+        // mirroring their front-of-list registration in updateBindingDependencies.
+        const run = new Set();
+        keys.forEach(k => HELIUM.bindings.get(k)?.forEach(b => { if (b.calc || b.loop || b.cond) run.add(b); }));
+        keys.forEach(k => HELIUM.bindings.get(k)?.forEach(b => run.add(b)));
+        run.forEach(safeApplyBinding);
+      }
+      dirtyObjects.clear();
+      flushScheduled = false;
+    };
+    const enqueueBindings = keys => {
+      keys.forEach(k => dirtyKeys.add(k));
+      dirtyKeys.add(ALL);
+      if (!flushScheduled) {
+        flushScheduled = true;
+        queueMicrotask(flushBindings);
+      }
+    };
+
   const handler = {
       // 'has' trap needed for 'with' statement - it uses 'in' operator to check property existence
       // Return false for $-prefixed names so they fall through to outer scope
@@ -247,6 +326,7 @@ export function createHelium(options = {}) {
         return true;
       },
       get(t,p,r) {
+      if (p === RAW) return t;
       const v = Reflect.get(t,p,r);
       if (!isCurrent() || !isReactiveObject(v)) return v;
       // Record this (key,parent) edge. An object can be reachable through more
@@ -262,14 +342,19 @@ export function createHelium(options = {}) {
       return proxy;
     },
       set: (t,p,v) => {
+        // Same-value writes don't re-trigger bindings. Besides skipping wasted
+        // work, this lets self-writing cascades converge: a wildcard @effect
+        // that assigns an unchanged value stops re-enqueueing itself.
+        const changed = !Object.is(Reflect.get(t,p), v);
         const res = Reflect.set(t,p,v);
-        if (!isCurrent()) return res;
+        if (!isCurrent() || !changed) return res;
         // Collect this property plus every ancestor key reachable through the
         // parent graph, so deeply-nested mutations (user.address.city) re-trigger
         // ancestor bindings. BFS with a visited set handles shared refs and cycles;
         // the key set de-dups so each binding runs at most once per mutation.
         const keys = new Set([p]);
         const seen = new Set();
+        dirtyObjects.add(t);
         let frontier = HELIUM.parentKeys.get(t) || [];
         while (frontier.length) {
           const next = [];
@@ -277,14 +362,14 @@ export function createHelium(options = {}) {
             keys.add(key);
             if (parent && !seen.has(parent)) {
               seen.add(parent);
+              dirtyObjects.add(parent);
               const pe = HELIUM.parentKeys.get(parent);
               if (pe) next.push(...pe);
             }
           }
           frontier = next;
         }
-        keys.forEach(k => HELIUM.bindings.get(k)?.forEach(safeApplyBinding));
-        HELIUM.bindings.get(ALL)?.forEach(safeApplyBinding);
+        enqueueBindings(keys);
         saveState?.();
         return res
       }
@@ -317,10 +402,7 @@ export function createHelium(options = {}) {
       if (!scope.tokens.has(prop)) scope.tokens.set(prop, { scope, prop });
       return scope.tokens.get(prop);
     };
-    const trigger = dependency => {
-      HELIUM.bindings.get(dependency)?.forEach(safeApplyBinding);
-      HELIUM.bindings.get(ALL)?.forEach(safeApplyBinding);
-    };
+    const trigger = dependency => enqueueBindings([dependency]);
     const createLocalValues = (source, scope) => {
       const target = { ...source };
       const nested = new WeakMap();
@@ -333,12 +415,14 @@ export function createHelium(options = {}) {
         if (nested.has(value)) return nested.get(value);
         const proxy = new Proxy(value, {
           get(target, prop, receiver) {
+            if (prop === RAW) return rawOf(target);
             let child = Reflect.get(target, prop, receiver);
             roots.get(target).forEach(key => child = wrap(child, key));
             return child;
           },
           set(target, prop, value, receiver) {
             const result = Reflect.set(target, prop, value, receiver);
+            dirtyObjects.add(rawOf(target));
             roots.get(target).forEach(key => trigger(scopeToken(scope, key)));
             return result;
           }
@@ -348,6 +432,7 @@ export function createHelium(options = {}) {
       };
       return new Proxy(target, {
         get(target, prop, receiver) {
+          if (prop === RAW) return target;
           return wrap(Reflect.get(target, prop, receiver), prop);
         },
         set(target, prop, value, receiver) {
@@ -358,7 +443,7 @@ export function createHelium(options = {}) {
       });
     };
     const createLocalScope = source => {
-      const scope = { values: null, tokens: new Map(), dependencies: null };
+      const scope = { values: null, tokens: new Map() };
       scope.values = createLocalValues(source, scope);
       return scope;
     };
@@ -421,11 +506,26 @@ export function createHelium(options = {}) {
     };
 
     // Compile expression with caching
-    const compile = (expr, withReturn = true) => {
+    const compileContext = ctx => typeof ctx === "string" ? { label: ctx } : (ctx || {});
+    const describeCompileContext = ctx => [ctx.build || engineName, ctx.label].filter(Boolean).join(" ");
+    const warnCompileFailure = (expr, compiled, ctx) => {
+      if (!compiled.error || !(ctx.strict || looksLikeExpression(expr))) return;
+      const label = describeCompileContext(ctx);
+      const key = `${label}:${expr}:${compiled.error.message}`;
+      if (HELIUM.warnedCompiles.has(key)) return;
+      HELIUM.warnedCompiles.add(key);
+      console.warn(`Helium expression compile warning${label ? ` [${label}]` : ""}:`, expr, compiled.error.message);
+    };
+
+    const compile = (expr, withReturn = true, ctx) => {
       const key = `${withReturn}:${expr}`;
-      if (HELIUM.fnCache.has(key)) return HELIUM.fnCache.get(key);
-      const compiled = engine.compile(expr, withReturn);
-      HELIUM.fnCache.set(key, compiled);
+      const context = compileContext(ctx);
+      let compiled = HELIUM.fnCache.get(key);
+      if (!compiled) {
+        compiled = engine.compile(expr, withReturn);
+        HELIUM.fnCache.set(key, compiled);
+      }
+      warnCompileFailure(expr, compiled, context);
       return compiled;
     };
 
@@ -439,24 +539,19 @@ export function createHelium(options = {}) {
     next.forEach(key => {
       if (b.dependencies?.has(key)) return;
       const bindings = HELIUM.bindings.get(key) || [];
-      HELIUM.bindings.set(key, b.calc || b.loop ? [b, ...bindings] : [...bindings, b]);
+      HELIUM.bindings.set(key, b.calc || b.loop || b.cond ? [b, ...bindings] : [...bindings, b]);
     });
     b.dependencies = next;
   };
 
   const executeBinding = (b, event = {}, elCtx = b.el) => {
     const accessed = new Map();
-    // @standard-start
-    scopesFor(b.el).forEach(scope => scope.dependencies?.forEach(key => accessed.set(
-      key,
-      typeof key === "string" ? state[key] : key.scope.values[key.prop]
-    )));
-    // @standard-end
     const wrap = (target, rootKey = null) => new Proxy(target, {
       has(target, prop) {
         return rootKey === null ? handler.has(target, prop) : Reflect.has(target, prop);
       },
       get(target, prop, receiver) {
+        if (prop === RAW) return rawOf(target);
         const value = Reflect.get(target, prop, receiver);
         if (rootKey === null && typeof prop === "string" && !accessed.has(prop)) accessed.set(prop, value);
         return isReactiveObject(value) ? wrap(value, rootKey ?? prop) : value;
@@ -490,41 +585,108 @@ export function createHelium(options = {}) {
   // @standard-start
   const renderFor = (b, value) => {
     const loop = b.loop, oldRows = loop[4], nextRows = new Map();
-    const items = Array.from(value || []);
+    // Iterate the raw array: per-item reads through the proxy layers are the
+    // dominant cost of a large render pass. `source` (the reactive view) is
+    // only consulted for the few rows that are created or actually changed.
+    const rawItems = rawOf(value);
+    const source = rawItems !== value ? value : null;
+    const items = Array.from(rawItems || []);
+    // One shared scope evaluates non-path :key expressions; building a full
+    // local scope per item just to read the key is far too slow on big lists.
+    const keyPath = loop[5];
+    const keyScope = keyPath ? null : { values: null, tokens: new Map() };
+    const keyEvalScope = keyPath ? null : createScope(b.el, {}, state, keyScope);
+    // Previous DOM order of surviving rows, for minimal-move reordering below.
+    const oldPositions = new Map();
+    oldRows.forEach(row => oldPositions.set(row, oldPositions.size));
 
     items.forEach((item, index) => {
-      const values = { [loop[0]]: item };
+      // Unwrap elements too: userland arrays ([...items, more]) hold reactive
+      // proxies, and row identity must compare raw-to-raw.
+      const raw = rawOf(item);
+      const values = { [loop[0]]: raw };
       if (loop[1]) values[loop[1]] = index;
-      const key = loop[2].execute(createScope(b.el, {}, state, createLocalScope(values)));
+      let key;
+      if (keyPath) {
+        key = values[keyPath[0]];
+        for (let k = 1; k < keyPath.length; k++) key = key?.[keyPath[k]];
+      } else {
+        keyScope.values = values;
+        key = loop[2].execute(keyEvalScope);
+      }
       if (nextRows.has(key)) return void console.error("Duplicate key:", key);
+
+      // Keep the item→array parent edge fresh (normally recorded by proxy
+      // reads) so later in-place writes still reach bindings on the list key.
+      if (source && raw && typeof raw === "object") {
+        let edges = HELIUM.parentKeys.get(raw);
+        if (!edges) HELIUM.parentKeys.set(raw, edges = []);
+        const p = String(index);
+        if (!edges.some(e => e.key === p && e.parent === rawItems)) edges.push({ key: p, parent: rawItems });
+      }
 
       let row = oldRows.get(key);
       if (row) {
-        row.scope.values[loop[0]] = item;
-        if (loop[1]) row.scope.values[loop[1]] = index;
+        // Re-run row bindings only when the row's data changed: a different
+        // item, a different index, or an in-place mutation recorded in
+        // dirtyObjects during this burst. Untouched rows are skipped entirely.
+        if (row.item !== raw || dirtyObjects.has(raw)) {
+          row.scope.values[loop[0]] = source ? source[index] : item;
+        }
+        if (loop[1] && row.index !== index) row.scope.values[loop[1]] = index;
       } else {
+        // Store the reactive view of the item (not the raw object) so row
+        // writes stay visible to bindings outside the row.
+        values[loop[0]] = source ? source[index] : item;
         const clone = loop[3].cloneNode(true);
         row = { nodes: [...clone.childNodes], scope: createLocalScope(values) };
         row.nodes.forEach(node => {
           if (node.nodeType === 1) addScope(node, row.scope);
         });
       }
-      row.scope.dependencies = b.dependencies;
+      row.item = raw;
+      row.index = index;
       nextRows.set(key, row);
     });
 
+    const removedNodes = [];
     oldRows.forEach((row, key) => {
       if (!nextRows.has(key)) row.nodes.forEach(node => {
-        if (node.nodeType === 1) cleanup(node);
+        if (node.nodeType === 1) removedNodes.push(node);
         node.remove();
       });
     });
+    cleanup(removedNodes);
     loop[4] = nextRows;
+    // Rows on the longest increasing subsequence of previous positions are
+    // already mutually ordered; use them as anchors and move only the rest.
+    const rows = [...nextRows.values()];
+    const stable = stableRowIndices(rows.map(row => oldPositions.get(row) ?? -1));
     let cursor = b.el;
-    nextRows.forEach(row => row.nodes.forEach(node => {
-      if (cursor.nextSibling !== node) cursor.after(node);
+    rows.forEach((row, i) => row.nodes.forEach(node => {
+      if (!stable.has(i) && cursor.nextSibling !== node) cursor.after(node);
       cursor = node;
     }));
+  };
+
+  const renderIf = (b, value) => {
+    const shown = b.cond[1];
+    if (value && !shown.length) {
+      const nodes = b.cond[1] = [...b.cond[0].cloneNode(true).childNodes];
+      // Content lands as siblings of the template, so any row scopes attached
+      // to the template itself (a @for row child) must be copied across.
+      const scopes = HELIUM.scopes.get(b.el);
+      let cursor = b.el;
+      nodes.forEach(node => {
+        if (node.nodeType === 1 && scopes) HELIUM.scopes.set(node, [...scopes]);
+        cursor.after(node);
+        cursor = node;
+      });
+    } else if (!value && shown.length) {
+      cleanup(shown.filter(node => node.nodeType === 1));
+      shown.forEach(node => node.remove());
+      b.cond[1] = [];
+    }
   };
   // @standard-end
 
@@ -536,6 +698,7 @@ export function createHelium(options = {}) {
     const r = execution.result;
     // @standard-start
     if (b.loop) return renderFor(b, r);
+    if (b.cond) return renderIf(b, r);
     // @standard-end
     if (calc) setStateValue(el, calc, r)
 
@@ -581,8 +744,15 @@ export function createHelium(options = {}) {
     el.setAttribute(prop, parseEx(r));
   }
 
-  const cleanup = el => {
-      const removed = new Set([el, ...el.querySelectorAll('*')]);
+  // Accepts one element or an array; a batch shares a single pass over the
+  // refs and bindings registries, so removing N rows costs one prune, not N.
+  const cleanup = els => {
+      const removed = new Set();
+      (Array.isArray(els) ? els : [els]).forEach(el => {
+        removed.add(el);
+        el.querySelectorAll('*').forEach(e => removed.add(e));
+      });
+      if (!removed.size) return;
       removed.forEach(e => {
         const initCleanups = HELIUM.cleanups.get(e);
         HELIUM.cleanups.delete(e);
@@ -670,15 +840,17 @@ export function createHelium(options = {}) {
 
       heElements.forEach(el => {
         // @standard-start
-        const scopeAttr = el.getAttribute("@scope") ?? el.getAttribute("data-he-scope");
-        if (scopeAttr != null) {
+        const dataAttr = el.getAttribute("@data") ?? el.getAttribute("data-he-data") ?? el.getAttribute("data-he");
+        if (dataAttr != null) {
           try {
-            const values = compile(scopeAttr, true).execute(createScope(el));
+            const values = compile(dataAttr, true, { label: "@data", strict: true }).execute(createScope(el));
             if (!isReactiveObject(values) || Array.isArray(values)) {
-              console.warn("Helium @scope expects an object:", scopeAttr);
+              console.warn("Helium @data expects an object:", dataAttr);
+            } else if (el === root) {
+              Object.assign(state, values);
             } else addScope(el, createLocalScope(values));
           } catch (error) {
-            console.warn("Helium @scope error:", error.message);
+            console.warn("Helium @data error:", error.message);
           }
         }
         // @standard-end
@@ -687,7 +859,7 @@ export function createHelium(options = {}) {
         const attrs = el.attributes;
         // @standard-start
         const execExpr = v => {
-          const compiled = compile(v, true);
+          const compiled = compile(v, true, { label: "HTTP option", strict: true });
           const scope = createScope(el);
           return compiled.execute(scope);
         };
@@ -721,33 +893,49 @@ export function createHelium(options = {}) {
           // @data alias is data-he-data (matching every other directive); the
           // bare data-he form is kept for backwards compatibility.
           if (match(name, "data") || name === 'data-he') {
+            // @standard-start
+            continue;
+            // @standard-end
             Object.assign(state, evalExpr(value));
           }
-          else if (match(name, "scope")) continue;
           // @standard-start
           else if (match(name, "for")) {
             const spec = parseFor(value), keyExpr = el.getAttribute(":key");
             if (el.tagName !== "TEMPLATE" || !spec || !keyExpr) {
               console.error("Invalid @for/:key");
             } else {
+              // A :key that is a plain path rooted at a loop alias ("item.id")
+              // is read directly per row, skipping the expression engine.
+              const keyPath = /^[\w$]+(\.[\w$]+)*$/.test(keyExpr.trim()) ? keyExpr.trim().split(".") : null;
               deferredBindings.push({
                 el,
                 prop: null,
-                compiled: compile(spec[2], true),
-                loop: [spec[0], spec[1], compile(keyExpr, true), el.content.cloneNode(true), new Map()]
+                compiled: compile(spec[2], true, { label: "@for", strict: true }),
+                loop: [spec[0], spec[1], compile(keyExpr, true, { label: ":key", strict: true }), el.content.cloneNode(true), new Map(),
+                  keyPath && (keyPath[0] === spec[0] || keyPath[0] === spec[1]) ? keyPath : null]
               });
             }
           }
+          else if (match(name, "if")) {
+            if (el.tagName !== "TEMPLATE" || forValue != null) {
+              console.error("@if requires a <template> element without @for");
+            } else {
+              deferredBindings.push({el, prop: null, compiled: compile(value, true, { label: "@if", strict: true }), cond: [el.content.cloneNode(true), []]});
+            }
+          }
           // @standard-end
+          // Lite ignores the structural directives it doesn't implement rather
+          // than registering them as event listeners.
+          else if (match(name, "for", "if")) continue;
           else if (name.startsWith(":") || name.startsWith('data-he-attr:')) {
             const propName = name.startsWith(":") ? name.slice(1) : name.slice(13);
-            deferredBindings.push({el, prop: propName, compiled: compile(value, true)});
+            deferredBindings.push({el, prop: propName, compiled: compile(value, true, { label: name })});
           }
           else if (match(name, "ref")) {
             HELIUM.refs.set("$" + value, el);
           }
           else if (match(name, "text", "html")) {
-            deferredBindings.push({el, prop: match(name, "text") ? "textContent" : "innerHTML", compiled: compile(value, true)});
+            deferredBindings.push({el, prop: match(name, "text") ? "textContent" : "innerHTML", compiled: compile(value, true, { label: name })});
           }
           else if (match(name, "bind")) {
             const event = (isCheckbox || isRadio || isSelect || name.includes(".lazy")) ? "change" : "input";
@@ -758,14 +946,14 @@ export function createHelium(options = {}) {
             el.addEventListener(event, inputHandler);
             if (!HELIUM.listeners.has(el)) HELIUM.listeners.set(el, []);
             HELIUM.listeners.get(el).push({receiver: el, event, handler: inputHandler});
-            deferredBindings.push({el, prop, compiled: compile(value, true)});
+            deferredBindings.push({el, prop, compiled: compile(value, true, { label: name })});
             if (isCheckbox) el.checked = !!state[value];
             else if (isRadio) el.checked = el.value == state[value];
             else el.value = state[value] ?? "";
           }
           else if (match(name, "hidden", "visible")) {
             const isHidden = match(name, "hidden");
-            deferredBindings.push({el, prop: "hidden", compiled: compile(value, true), isHiddenAttr: isHidden});
+            deferredBindings.push({el, prop: "hidden", compiled: compile(value, true, { label: name, strict: true }), isHiddenAttr: isHidden});
           }
           else if (match(name, "calculate")) {
             const calcName = name.split(":")[1];
@@ -774,13 +962,13 @@ export function createHelium(options = {}) {
             calcOwner = ownerFor(scopesFor(el), calcName);
             // @standard-end
             if (!calcOwner && !(calcName in state)) state[calcName] = undefined;  // Initialize so other bindings can reference it
-            deferredBindings.push({el, calc: calcName, prop: null, compiled: compile(value, true)});
+            deferredBindings.push({el, calc: calcName, prop: null, compiled: compile(value, true, { label: name, strict: true })});
           }
           else if (match(name, "effect")) {
-            deferredBindings.push({el, prop: null, compiled: compile(value, true), keys: name.split(":").slice(1)});
+            deferredBindings.push({el, prop: null, compiled: compile(value, true, { label: name, strict: true }), keys: name.split(":").slice(1)});
           }
           else if (match(name, "init")) {
-            newInits.push({ compiled: compile(value, true), el });
+            newInits.push({ compiled: compile(value, true, { label: name, strict: true }), el });
           }
           else if (name.startsWith("@") || name.startsWith('data-he')) {
             const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
@@ -833,7 +1021,7 @@ export function createHelium(options = {}) {
                     paramsAttr = props.reduceRight((acc, key, i) => `{ ${key}: ${i == 1 ? `'${el[acc]}'` : acc} }`);
                   }
                   const scope = createScope(el, e);
-                  const paramsCompiled = compile(paramsAttr, true);
+                  const paramsCompiled = compile(paramsAttr, true, { label: "@params", strict: true });
                   const params = paramsCompiled.execute(scope);
                   // Fire-and-forget from an attribute handler: log failures here.
                   ajax(value, eventName.toUpperCase(), options, params)
@@ -842,7 +1030,7 @@ export function createHelium(options = {}) {
               // @standard-end
               {
                 const scope = createScope(el, e);
-                const compiled = compile(value, true);
+                const compiled = compile(value, true, { label: name, strict: true });
                 // Inline expressions may return a promise (e.g. $get/$post);
                 // swallow rejections so fire-and-forget calls don't warn.
                 const result = compiled.execute(scope);
@@ -863,7 +1051,7 @@ export function createHelium(options = {}) {
       });
       deferredBindings.forEach(b => {
         b.initialExecution = executeBinding(b);
-        b.calc || b.loop ? newBindings.unshift(b) : newBindings.push(b);
+        b.calc || b.loop || b.cond ? newBindings.unshift(b) : newBindings.push(b);
       })
       return { bindings: newBindings, inits: newInits };
     }
@@ -872,9 +1060,13 @@ export function createHelium(options = {}) {
     HELIUM.observer?.disconnect();
     HELIUM.observer = new MutationObserver(async (ms) => {
       if (!isCurrent()) return;
+      // One batched cleanup for everything detached in this mutation batch.
+      const detached = [];
       for (const m of ms) {
-        m.removedNodes.forEach((n) => n.nodeType === 1 && !root.contains(n) && cleanup(n));
-
+        m.removedNodes.forEach((n) => n.nodeType === 1 && !root.contains(n) && detached.push(n));
+      }
+      cleanup(detached);
+      for (const m of ms) {
         for (const n of m.addedNodes) {
           if (n.nodeType === 1 && root.contains(n) && !HELIUM.processed.has(n)) {
             const { bindings, inits } = await processElements(n);

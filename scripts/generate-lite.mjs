@@ -13,8 +13,8 @@ const transforms = [
     "export { defaultHelium as helium, defaultTeardown as heliumTeardown };",
   ],
   [
-    "export function createHelium(options = {}) {\n  const engine = options.engine ?? defaultEngine;\n  const configuredRoot = options.root;",
-    "function createHelium(configuredRoot) {\n  const engine = defaultEngine;",
+    "export function createHelium(options = {}) {\n  const engine = options.engine ?? defaultEngine;\n  const engineName = engine.diagnosticName || \"helium\";\n  const configuredRoot = options.root;",
+    "function createHelium(configuredRoot) {\n  const engine = defaultEngine;\n  const engineName = \"lite\";",
   ],
   ["createHelium({ ...options, root: target })", "createHelium(target)"],
   ["(typeof configuredRoot === \"string\" ? document.querySelector(configuredRoot) : configuredRoot)", "configuredRoot"],

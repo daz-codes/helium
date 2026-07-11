@@ -26,13 +26,15 @@ const exposeDOM = html => {
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
-async function smokeBinding(entry, teardown, supportsScope) {
-  const dom = exposeDOM('<main data-helium><span @text="count"></span><input @bind.lazy.trim.number="count"><section @scope="{ count: 10 }"><button @click="count++"></button><b @text="count"></b></section></main>');
+async function smokeBinding(entry, teardown, supportsLocalData) {
+  const localData = supportsLocalData ? ' @data="{ count: 10 }"' : "";
+  const dom = exposeDOM(`<main data-helium><span @text="count"></span><input @bind.lazy.trim.number="count"><section${localData}><button @click="count++"></button><b @text="count"></b></section></main>`);
   const module = await import(`../dist/${entry}`);
   const state = await module.default({ count: 1 });
   const output = document.querySelector("span");
   if (output.textContent !== "1") throw new Error(`${entry} failed its initial binding`);
   state.count = 2;
+  await tick();
   if (output.textContent !== "2") throw new Error(`${entry} failed its reactive update`);
   const input = document.querySelector("input");
   input.value = " 4 ";
@@ -41,10 +43,11 @@ async function smokeBinding(entry, teardown, supportsScope) {
   input.dispatchEvent(new window.Event("change"));
   if (state.count !== 4) throw new Error(`${entry} failed trim/number binding`);
   document.querySelector("button").click();
-  const expectedLocal = supportsScope ? "11" : "5";
-  const expectedRoot = supportsScope ? 4 : 5;
+  await tick();
+  const expectedLocal = supportsLocalData ? "11" : "5";
+  const expectedRoot = supportsLocalData ? 4 : 5;
   if (document.querySelector("b").textContent !== expectedLocal || state.count !== expectedRoot) {
-    throw new Error(`${entry} failed its expected state-scope behavior`);
+    throw new Error(`${entry} failed its expected data-scope behavior`);
   }
   module[teardown]();
 
@@ -101,6 +104,7 @@ async function smokeFor(entry) {
   await tick();
   const first = root.querySelector('[data-id="1"]');
   app.state.items = [app.state.items[1], app.state.items[0]];
+  await tick();
   if (root.querySelectorAll("span")[1] !== first) throw new Error(`${entry} lost keyed identity`);
   app.unmount();
   dom.window.close();

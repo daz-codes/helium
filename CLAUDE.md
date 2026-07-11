@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Helium is an ultra-light reactive library that makes HTML interactive using declarative attributes. The Standard production build is about 6.49KB minified/gzipped and Lite is about 3.93KB. Its source entry points require no build step and work directly in the browser.
+Helium is an ultra-light reactive library that makes HTML interactive using declarative attributes. The Standard production build is about 7.59KB minified/gzipped and Lite is about 4.56KB. Its source entry points require no build step and work directly in the browser.
 
 ## Commands
 
@@ -16,7 +16,10 @@ npm run generate  # Regenerate helium-lite.js from the shared helium.js source
 npm run build     # Generate minified, self-contained bundles in dist/
 npm run size      # Report raw, gzip, and Brotli sizes
 npm run test:dist # Smoke-test every generated production bundle
+npm run test:browser # Run Chromium smoke tests against browser entry points
 npm run check     # Run tests, build, and enforce size budgets
+npm run check:ci  # Run check plus the real-browser smoke suite
+npm run bench     # Benchmark against Alpine.js in Chromium (scripts/benchmark.mjs)
 ```
 
 There is no consumer build requirement; the source files are browser-ready ES
@@ -30,6 +33,7 @@ modules. The maintainer build generates the optimized `dist/` entry points.
 - **Generated shared core**: unmarked `helium.js` sections are the Lite/core runtime; `@standard` sections add keyed lists, HTTP, imports, SSE hooks, and Turbo before `helium-lite.js` is generated
 - **Optional SSE add-ons**: `helium-sse.js` and `helium-csp-sse.js`
 - **Proxy-based reactivity**: Uses JavaScript Proxy to intercept state changes and trigger DOM updates
+- **Batched updates**: mutations enqueue dirty keys and a microtask flush runs each affected binding once per burst; same-value writes are no-ops
 - **Attribute-driven**: Interactivity is declared via `@` prefixed HTML attributes (with `data-he-*` aliases for HTML validation)
 - **Expression compilation**: Inline expressions are compiled to functions using `new Function()` with caching
 - **Pluggable expression engine**: Use `createHelium()` to create variants with custom expression engines
@@ -40,7 +44,8 @@ modules. The maintainer build generates the optimized `dist/` entry points.
 
 ```
 HTML parsed → processElements() registers bindings → expressions compiled (cached)
-→ initial applyBinding() updates DOM → state changes via Proxy → triggers bound updates
+→ initial applyBinding() updates DOM → state changes via Proxy → dirty keys enqueued
+→ microtask flush runs each affected binding once (cascades drained in the same flush)
 → MutationObserver watches for new content → processes dynamically added elements
 ```
 
@@ -61,6 +66,7 @@ HTML parsed → processElements() registers bindings → expressions compiled (c
 - `dist/*.min.js` - Generated minified, self-contained production builds
 - `jexpr.js` - CSP expression parser
 - `scripts/build.mjs` / `scripts/size.mjs` - Production build and size-budget pipeline
+- `scripts/benchmark.mjs` - Chromium head-to-head benchmark vs Alpine.js (devDependency)
 - `*.test.js` - Vitest suites for each build and the parser
 - `vitest.config.js` - Test configuration (jsdom environment, globals enabled)
 
@@ -79,11 +85,11 @@ app.unmount();
 
 | Directive | Purpose |
 |-----------|---------|
-| `@data` | Initialize state: `@data="{ count: 0 }"` |
-| `@scope` | Standard/CSP only: declare reactive state local to an element subtree |
+| `@data` | Initialize state; root `@data` is global, nested `@data` is local in Standard/CSP |
 | `@text` | Bind text content |
 | `@html` | Bind HTML content (use with caution for XSS) |
 | `@for` + `:key` | Keyed `<template>` iteration in Standard/CSP; excluded from Lite |
+| `@if` | Conditional `<template>` rendering in Standard/CSP; excluded from Lite |
 | `@bind` | Two-way binding; supports `.number`, `.trim`, and `.lazy` modifiers |
 | `@hidden/@visible` | Conditional visibility |
 | `:attribute` | Dynamic attribute binding |
@@ -111,7 +117,7 @@ Available in expressions: `$` (querySelector), `$el`, `$event`, `$data`, `$html`
 - **CSP**: Standard and Lite require `unsafe-eval`. Use `@daz4126/helium/csp` under a strict policy.
 - **Idiomorph integration**: If Idiomorph is loaded, Helium automatically uses it for efficient DOM morphing
 - **Turbo/Hotwire**: Automatic integration via `turbo:before-render` and `turbo:render` events
-- **Local state**: Standard/CSP `@scope="{ count: 0 }"` shadows root values for one subtree; Lite remains global-state-only
+- **Local state**: Standard/CSP nested `@data="{ count: 0 }"` shadows root values for one subtree; Lite remains global-state-only
 
 ## Creating Custom Variants
 
@@ -151,8 +157,15 @@ describe('Feature', () => {
 
   it('should work', async () => {
     container.innerHTML = '<div @text="count"></div>';
-    await helium({ count: 5 });
+    const state = await helium({ count: 5 });
     expect(container.querySelector('div').textContent).toBe('5');
+
+    // Updates are batched onto a microtask; await a tick before asserting
+    // on the DOM after a mutation (setTimeout(0) also covers @if/@for
+    // content, which the MutationObserver processes asynchronously).
+    state.count = 6;
+    await new Promise(r => setTimeout(r, 0));
+    expect(container.querySelector('div').textContent).toBe('6');
   });
 });
 ```

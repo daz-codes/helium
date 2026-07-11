@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { helium, heliumTeardown, evaluate, preprocess } from './helium-csp.js';
 
+// State changes are batched and applied on a microtask.
+const tick = () => new Promise(r => setTimeout(r, 0));
+
 describe('Helium CSP - CSP-Safe Reactive Library', () => {
   let container;
 
@@ -22,6 +25,7 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       const b = await helium.mount('#b', { count: 2 });
 
       a.state.count = 3;
+      await tick();
       expect(container.querySelector('#a span').textContent).toBe('3');
       expect(container.querySelector('#b span').textContent).toBe('2');
 
@@ -42,6 +46,7 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       const first = container.querySelector('[data-id="1"]');
 
       state.items = [state.items[1], state.items[0]];
+      await tick();
 
       expect(container.querySelectorAll('p')[1]).toBe(first);
       expect([...container.querySelectorAll('p')].map(el => el.textContent)).toEqual(['0: Two', '1: One']);
@@ -152,10 +157,12 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       expect(container.querySelector('div').textContent).toBe('A');
       state.show = false;
       state.b = 'updated B';
+      await tick();
       expect(container.querySelector('div').textContent).toBe('updated B');
 
       state.show = true;
       state.a = 'updated A';
+      await tick();
       expect(container.querySelector('div').textContent).toBe('updated A');
     });
 
@@ -225,6 +232,22 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       container.innerHTML = '<span @text="count > 5 ? \'big\' : \'small\'"></span>';
       await helium({ count: 3 });
       expect(container.querySelector('span').textContent).toBe('small');
+    });
+
+    it('should keep plain malformed strings quiet but warn for expression-like compile failures', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      container.innerHTML = `
+        <span id="literal" @text="Loading..."></span>
+        <span id="broken" @text="user.name."></span>
+      `;
+      await helium({});
+
+      expect(container.querySelector('#literal').textContent).toBe('Loading...');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('csp');
+      expect(warnSpy.mock.calls[0][0]).toContain('@text');
+      expect(warnSpy.mock.calls[0][1]).toBe('user.name.');
+      warnSpy.mockRestore();
     });
   });
 
@@ -544,17 +567,17 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
   });
 
   describe('@data Directive', () => {
-    it('should merge data into state', async () => {
-      container.innerHTML = '<div @data="{ user: \'Alice\', age: 30 }"></div><span @text="user"></span>';
-      await helium({});
+    it('should merge root data into root state', async () => {
+      container.setAttribute('data-he-data', "{ user: 'Alice', age: 30 }");
+      container.innerHTML = '<span @text="user"></span>';
+      const state = await helium({});
       expect(container.querySelector('span').textContent).toBe('Alice');
+      expect(state.user).toBe('Alice');
     });
-  });
 
-  describe('@scope Directive', () => {
-    it('should isolate reactive local state with the CSP expression engine', async () => {
+    it('should isolate nested local state with the CSP expression engine', async () => {
       container.innerHTML = `
-        <div @scope="{ count: 2 }">
+        <div @data="{ count: 2 }">
           <button @click="count++"></button><span @text="count"></span>
         </div>
         <span id="root-count" @text="count"></span>
@@ -562,6 +585,7 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       const state = await helium({ count: 30 });
 
       container.querySelector('button').click();
+      await tick();
 
       expect(container.querySelector('div span').textContent).toBe('3');
       expect(container.querySelector('#root-count').textContent).toBe('30');
@@ -808,6 +832,24 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       state.count = 5;
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('div').textContent).toBe('Count: 5');
+    });
+  });
+
+  describe('Conditional @if', () => {
+    it('should toggle template content with the expression', async () => {
+      container.innerHTML = `
+        <template @if="loggedIn"><p @text="'Hello ' + user"></p></template>
+      `;
+      const state = await helium({ loggedIn: false, user: 'Ada' });
+      expect(container.querySelector('p')).toBeNull();
+
+      state.loggedIn = true;
+      await new Promise(r => setTimeout(r, 0));
+      expect(container.querySelector('p').textContent).toBe('Hello Ada');
+
+      state.loggedIn = false;
+      await tick();
+      expect(container.querySelector('p')).toBeNull();
     });
   });
 

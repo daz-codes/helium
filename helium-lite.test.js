@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { helium, heliumTeardown } from './helium-lite.js';
 
+// State changes are batched and applied on a microtask.
+const tick = () => new Promise(r => setTimeout(r, 0));
+
 describe('Helium Lite', () => {
   let container;
 
@@ -83,6 +86,7 @@ describe('Helium Lite', () => {
       const state = await helium({ user: { address: { city: 'London' } } });
 
       state.user.address.city = 'Bristol';
+      await tick();
       expect(container.querySelector('div').textContent).toBe('Bristol');
     });
 
@@ -92,6 +96,7 @@ describe('Helium Lite', () => {
       const state = await helium({ a: shared, b: shared });
 
       state.a.name = 'After';
+      await tick();
       expect([...container.querySelectorAll('span')].map(el => el.textContent)).toEqual(['After', 'After']);
     });
 
@@ -101,6 +106,7 @@ describe('Helium Lite', () => {
       const b = await helium.mount('#b', { count: 2 });
 
       a.state.count = 3;
+      await tick();
       expect(container.querySelector('#a span').textContent).toBe('3');
       expect(container.querySelector('#b span').textContent).toBe('2');
 
@@ -116,10 +122,12 @@ describe('Helium Lite', () => {
       expect(container.querySelector('div').textContent).toBe('A');
       state.show = false;
       state.b = 'updated B';
+      await tick();
       expect(container.querySelector('div').textContent).toBe('updated B');
 
       state.show = true;
       state.a = 'updated A';
+      await tick();
       expect(container.querySelector('div').textContent).toBe('updated A');
     });
 
@@ -179,17 +187,49 @@ describe('Helium Lite', () => {
       expect(container.querySelector('span').textContent).toBe('Bob');
     });
 
-    it('should keep one global state namespace when @scope markup is present', async () => {
+    it('should keep plain malformed strings quiet but warn for expression-like compile failures', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       container.innerHTML = `
-        <div @scope="{ count: 1 }"><button @click="count++"></button><span @text="count"></span></div>
-        <div @scope="{ count: 8 }"><span @text="count"></span></div>
+        <span id="literal" @text="Loading..."></span>
+        <span id="broken" @text="user.name."></span>
+      `;
+      await helium({});
+
+      expect(container.querySelector('#literal').textContent).toBe('Loading...');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('lite');
+      expect(warnSpy.mock.calls[0][0]).toContain('@text');
+      expect(warnSpy.mock.calls[0][1]).toBe('user.name.');
+      warnSpy.mockRestore();
+    });
+
+    it('should keep one global state namespace for nested @data markup', async () => {
+      container.innerHTML = `
+        <div @data="{ count: 1 }"><button @click="count++"></button><span @text="count"></span></div>
+        <div @data="{ count: 8 }"><span @text="count"></span></div>
       `;
       const state = await helium({ count: 20 });
 
       container.querySelector('button').click();
+      await tick();
 
-      expect([...container.querySelectorAll('span')].map(el => el.textContent)).toEqual(['21', '21']);
-      expect(state.count).toBe(21);
+      expect([...container.querySelectorAll('span')].map(el => el.textContent)).toEqual(['9', '9']);
+      expect(state.count).toBe(9);
+    });
+
+    it('should ignore @if and @for templates without registering listeners', async () => {
+      container.innerHTML = `
+        <template @if="show"><p>conditional</p></template>
+        <template @for="item in items"><li></li></template>
+        <span @text="count"></span>
+      `;
+      const state = await helium({ show: true, items: [{ id: 1 }], count: 5 });
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(container.querySelector('p')).toBeNull();
+      expect(container.querySelector('li')).toBeNull();
+      expect(container.querySelector('span').textContent).toBe('5');
+      state.show = false; // toggling must not throw on stale structural bindings
     });
   });
 
@@ -357,6 +397,7 @@ describe('Helium Lite', () => {
       const element = container.querySelector('div');
 
       state.classes = { current: true };
+      await tick();
 
       expect(element.classList.contains('base')).toBe(true);
       expect(element.classList.contains('active')).toBe(false);

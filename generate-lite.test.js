@@ -35,7 +35,9 @@ describe("generate-lite compiler boundary", () => {
       expect(baseline).not.toContain("defaultDisabled");
       expect(baseline).not.toContain("const scopesFor");
       expect(baseline).not.toContain("createLocalValues");
-      expect(baseline).toContain('match(name, "scope")');
+      // Lite must keep the skip for structural directives it doesn't implement
+      expect(baseline).toContain('match(name, "for", "if")');
+      expect(baseline).not.toContain("renderIf");
     });
   });
 

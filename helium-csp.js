@@ -198,6 +198,8 @@ const allowGlobals = globals => {
 
 // jexpr-based expression engine (CSP-safe)
 const jexprEngine = {
+  diagnosticName: "csp",
+
   compile(expr, withReturn = true) {
     const processed = preprocess(expr.trim());
     const cacheKey = `${withReturn}:${processed}`;
@@ -212,10 +214,10 @@ const jexprEngine = {
       cache.set(cacheKey, compiled);
       return compiled;
     } catch (e) {
-      console.error(`Failed to parse: "${expr}"`, e.message);
       const compiled = {
-        execute: () => undefined,
-        getIds: () => []
+        execute: () => expr,
+        getIds: () => [],
+        error: e
       };
       cache.set(cacheKey, compiled);
       return compiled;

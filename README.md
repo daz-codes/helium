@@ -18,7 +18,7 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 Helium is designed for developers who want:
 
-- **Lightweight** - About 3.9–10.9KB minified and gzipped, depending on the build
+- **Lightweight** - About 4.6–11.9KB minified and gzipped, depending on the build
 - **Powerful** - Declarative JavaScript in your HTML
 - **Zero build step** - Works directly in the browser with no compiling
 - **Easy to learn** - If you know HTML and basic JavaScript, you're ready
@@ -31,7 +31,7 @@ Helium comes in three core versions, with SSE available as an optional add-on, s
 
 The full-featured version with everything included.
 
-- All directives (`@text`, `@html`, `@for`, `@bind`, `@data`, `@scope`, `@ref`, `@calculate`, `@effect`, `@init`, etc.)
+- All directives (`@text`, `@html`, `@for`, `@if`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`, etc.)
 - Event handlers with modifiers
 - HTTP requests (`@get`, `@post`, `@put`, `@patch`, `@delete`)
 - Module imports (`@import`)
@@ -51,7 +51,7 @@ A slimmed-down version with just the core reactivity features.
 - Core directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`)
 - Event handlers with modifiers
 - One global state namespace
-- No `@scope`, keyed `@for`, HTTP requests, imports, SSE, or Turbo integration
+- No local `@data`, keyed `@for`, HTTP requests, imports, SSE, or Turbo integration
 
 **Best for:** Simple interactive pages where you only need reactivity and don't need server communication or module imports.
 
@@ -104,23 +104,25 @@ import helium from "@daz4126/helium/csp"
 | Feature | Standard | Lite | CSP |
 |---------|----------|------|-----|
 | Core directives | ✅ | ✅ | ✅ |
-| Element-local `@scope` | ✅ | ❌ | ✅ |
+| Element-local `@data` | ✅ | ❌ | ✅ |
 | Keyed `@for` | ✅ | ❌ | ✅ |
+| Conditional `@if` | ✅ | ❌ | ✅ |
 | Event handlers | ✅ | ✅ | ✅ |
 | HTTP requests | ✅ | ❌ | ✅ |
 | `@import` | ✅ | ❌ | ✅ |
 | SSE | Add-on | ❌ | Add-on |
 | Turbo integration | ✅ | ❌ | ✅ |
 | CSP safe | ❌ | ❌ | ✅ |
-| Approx. min+gzip size | 6.49KB | 3.93KB | 10.56KB |
+| Approx. min+gzip size | 7.59KB | 4.56KB | 11.51KB |
 
 Sizes are enforced against the production Terser builds with gzip level 9. The
-CSP figure includes its expression parser. Adding SSE produces 6.86KB Standard
-and 10.94KB CSP bundles.
+CSP figure includes its expression parser. Adding SSE produces 7.97KB Standard
+and 11.88KB CSP bundles.
 
 Lite is generated from the same global-state reactive core as Standard. It has
-identical deep/shared reactivity, lifecycle, binding, and cleanup behavior, but
-intentionally excludes element-local scopes and Standard's other extensions.
+identical deep/shared reactivity, lifecycle, binding, and cleanup behavior for
+root state, but intentionally excludes element-local data and Standard's other
+extensions.
 
 ## Installation
 
@@ -300,6 +302,32 @@ but keyed `@for` avoids HTML-string interpolation and lets each row use normal
 
 **Alias:** `data-he-for` (the key remains `:key`)
 
+### @if
+
+Standard and CSP can conditionally render a `<template>`'s content. Unlike
+`@hidden`/`@visible`, which only toggle visibility, `@if` adds the content to
+the DOM when the expression is truthy and fully removes it — bindings,
+listeners, and `@init` cleanup included — when it becomes falsy:
+
+```html
+<template @if="loggedIn">
+  <p>Welcome back, <span @text="user.name"></span>!</p>
+  <button @click="logout($data)">Log out</button>
+</template>
+```
+
+Content that is switched off costs nothing: its expressions never evaluate and
+its listeners don't exist. Use `@if` for anything conditional-but-expensive
+(modals, tab panels, admin-only markup) and `@hidden`/`@visible` for cheap
+show/hide toggles where you want to preserve element state such as form input.
+
+`@if` requires a `<template>` element (like `@for`, and like Alpine's `x-if`)
+because template content is inert until inserted — that's what makes the "off"
+state free. It cannot be combined with `@for` on the same template; nest one
+template inside the other instead. Lite excludes this feature.
+
+**Alias:** `data-he-if`
+
 ### @bind
 
 Creates a 2-way binding between an input element's value and a variable. Whatever is entered in the following input field will be stored as a variable called name:
@@ -389,31 +417,23 @@ Makes the element hidden or visible depending on the result of a JavaScript expr
 
 ### @data
 
-Initializes variables that can be used in JavaScript expressions. This is useful for setting up initial state.
+Initializes variables that can be used in JavaScript expressions. In Standard
+and CSP, `@data` behaves like Alpine's `x-data`: root-level `@data` initializes
+the mounted root state, while nested `@data` creates local state for that
+element and its descendants. Lite always uses one global state namespace, so
+every `@data` merges into root state.
 
 ```html
-<div @data="{ count: 0, open: false, name: 'Helium' }"></div>
+<main @helium @data="{ count: 100, name: 'Helium' }">
+  <p @text="name + ': ' + count"></p>
+</main>
 ```
 
-You can then use these variables in other Helium attributes:
+Nested `@data` is local in Standard/CSP:
 
 ```html
-<div @data="{ count: 0 }">
-  <button @click="count++">Increment</button>
-  <p @text="count"></p>
-</div>
-```
-
-**Alias:** `data-he-data`
-
-### @scope (Standard/CSP)
-
-Creates reactive state owned by an element and its descendants. Scoped names
-shadow root state without changing the object returned by `helium()`:
-
-```html
-<main @data="{ count: 100 }">
-  <section @scope="{ count: 0, open: false }">
+<main @helium @data="{ count: 100 }">
+  <section @data="{ count: 0, open: false }">
     <button @click="count++">Increment local count</button>
     <button @click="open = !open">Toggle</button>
     <p @text="count"></p>
@@ -424,31 +444,26 @@ shadow root state without changing the object returned by `helium()`:
 </main>
 ```
 
-The scope expression runs once in its parent context, so defaults can use outer
-values. Nested scopes inherit outer names, and assignment updates the nearest
-scope that declares that name:
+The object is evaluated once in its parent context, so local defaults can use
+outer values. Nested data objects inherit outer names, and assignment updates
+the nearest data object that declares that name:
 
 ```html
-<div @scope="{ count: startingCount, label: 'outer' }">
-  <div @scope="{ label: 'inner' }">
+<div @data="{ count: startingCount, label: 'outer' }">
+  <div @data="{ label: 'inner' }">
     <button @click="count++">Updates the outer local count</button>
     <span @text="label"></span> <!-- inner -->
   </div>
 </div>
 ```
 
-Declare every name that should remain local. Assigning an undeclared name keeps
-the existing Helium behavior and writes to root state. The same applies to
-`@bind` and `@calculate` targets: declare their target names in `@scope` when
-they should be local. Inside the subtree, `$data` is the scoped state view.
-Local values are not included in root `@local-storage` persistence.
+Declare every name that should remain local. Assigning an undeclared name writes
+to root state. The same applies to `@bind` and `@calculate` targets: declare
+their target names in local `@data` when they should be local. Inside the
+subtree, `$data` is the scoped state view. Local values are not returned from
+`helium()` and are not included in root `@local-storage` persistence.
 
-`@data` continues to merge into root state; it has not changed semantics.
-
-**Alias:** `data-he-scope`
-
-`@scope` is intentionally excluded from Lite, which always uses one global
-state namespace per mounted root.
+**Alias:** `data-he-data` (the legacy bare `data-he` alias is also accepted)
 
 ### @ref
 
@@ -1164,6 +1179,29 @@ This is the recommended approach when you need to update variables:
 
 ## Advanced Features
 
+### Batched Updates
+
+State changes are batched: a burst of synchronous mutations triggers a single
+DOM update on the next microtask, and each affected binding runs once no matter
+how many mutations fed it. This keeps loops over state cheap — updating 100
+items in a keyed list re-renders the list once, not 100 times:
+
+```javascript
+// One DOM update, not 100
+for (let i = 0; i < 100; i++) state.items[i].done = true;
+```
+
+Two practical consequences:
+
+- **Reading the DOM right after a mutation shows the old value.** Await a
+  microtask first: `state.count = 5; await Promise.resolve();` (in tests, a
+  `setTimeout(0)` tick also covers content inserted by `@if`/`@for`, which is
+  processed asynchronously by the MutationObserver).
+- **Assigning a value that is already current is a no-op** — it doesn't
+  re-trigger bindings, so effects that write unchanged state settle instead of
+  looping. A binding cascade that *never* stops writing new values (e.g.
+  `@effect:*="count++"`) is detected and reported after 100 passes.
+
 ### DOM Morphing with Idiomorph
 
 By default, when you update innerHTML with `@html`, Helium replaces the entire content. This can cause issues like losing focus, resetting scroll positions, or interrupting animations.
@@ -1306,6 +1344,17 @@ import helium from "@daz4126/helium/csp"
 <div @effect:page="analytics.track('page_view', { page })"></div>
 ```
 
+**Benchmarking:**
+
+The repo includes a head-to-head runtime benchmark against Alpine.js (keyed
+list create/update/swap/clear plus rapid counter updates, run in real
+Chromium). Run it with:
+
+```bash
+npm run bench                    # defaults: 1000 rows, 7 runs
+node scripts/benchmark.mjs --rows 5000 --runs 5
+```
+
 ### Structuring Larger Apps
 
 **Organize state at the root:**
@@ -1411,7 +1460,11 @@ helium({
 
 ### JavaScript Expression Errors
 
-If a binding expression throws at runtime, Helium logs the error and continues without updating that binding. Standard and lite retain malformed expressions as literal text for compatibility; quote intentional string constants, for example `@text="'Ready'"`.
+If a binding expression throws at runtime, Helium logs the error and continues
+without updating that binding. Failed compilation keeps Helium's literal-string
+ergonomics: plain text such as `@text="Loading..."` stays quiet, while
+expression-looking failures such as `@text="user.name."` or
+`@click="count +"` emit a `console.warn` with the attribute and expression.
 
 ```html
 <!-- If items is undefined, this won't crash the page -->
@@ -1434,8 +1487,10 @@ promises, so you can handle failures explicitly:
 
 ### Invalid Attribute Syntax
 
-Standard and Lite retain expressions that cannot be compiled as literal values.
-The CSP build logs the parser error and leaves the binding undefined.
+Helium keeps plain malformed value expressions as literal values. If a failed
+expression looks like broken JavaScript, Helium emits a warning with directive
+context. Event handlers, HTTP options, `@data`, `@for`, `@if`, `@calculate`,
+`@effect`, and `@init` are treated strictly and warn on compile failure.
 
 
 ## Roadmap & Known Limitations
@@ -1445,42 +1500,36 @@ intentionally absent (or still on the roadmap). Current gaps:
 
 ### Not yet supported
 
-- **No DOM-removing `@if`** — only `@hidden`/`@visible`, which toggle visibility
-  but keep elements in the DOM.
 - **No `$watch`/`$nextTick`, and no cross-root shared store** — each mounted
   instance has its own isolated state namespace.
+- **No transition helper** — use CSS transitions/classes directly with
+  `@hidden`, `@visible`, or `@if`.
 
 ### Roadmap
 
 Ordered by recommended implementation sequence:
 
-1. **Improve expression-compilation diagnostics** — emit a useful `console.warn`
-   containing the expression and build/engine context instead of silently
-   treating every compile failure as a literal value.
-2. **Add real-browser CI** covering CSP, Turbo, SSE, focus preservation, late
-   imports, generated Lite output, and package exports before adding more DOM
-   lifecycle behavior.
-3. **Document function and `this` context limitations** alongside the existing
+1. **Document function and `this` context limitations** alongside the existing
    magic-variable guidance, with correct patterns for passing `$data`, `$el`,
    and other context explicitly.
-4. **Add opt-in required-CSRF validation for POST/PUT/PATCH** — fail before the
+2. **Add opt-in required-CSRF validation for POST/PUT/PATCH** — fail before the
    request when an application declares that a token is mandatory, without
    breaking tokenless APIs and cross-origin requests.
-5. **Add request cancellation and explicit success/error hooks** using
+3. **Add request cancellation and explicit success/error hooks** using
    `AbortController`; define the request lifecycle before expanding loading and
    error-state APIs.
-6. **Document a form-validation pattern first**, using native constraint
+4. **Document a form-validation pattern first**, using native constraint
    validation and Helium state; add helpers only if examples reveal recurring
    boilerplate.
-7. **Create a complete error-state example** covering validation, HTTP failure,
+5. **Create a complete error-state example** covering validation, HTTP failure,
    retry, accessible messaging, and clearing stale errors.
-8. **Complete HTTP loading-state lifecycle behavior** — `@loading` already
+6. **Complete HTTP loading-state lifecycle behavior** — `@loading` already
    exists, so define consistent success, error, cancellation, and restoration
    behavior rather than adding a second loading mechanism.
-9. **Add debounced two-way binding updates if needed** after reproducing a real
+7. **Add debounced two-way binding updates if needed** after reproducing a real
     feedback/caret loop; event-handler debouncing already covers ordinary input
     throttling.
-10. **Add a minimal watch/middleware system** together with a clear size budget;
+8. **Add a minimal watch/middleware system** together with a clear size budget;
     avoid adopting Alpine-scale surface area without demonstrated use cases.
 
 ## Contributing
@@ -1491,9 +1540,12 @@ Helium is open source! Contributions, issues, and feature requests are welcome.
 - Report issues: Create an issue on GitHub
 - Suggest features: Open a discussion on GitHub
 
-Before submitting a change, run `npm run check`. It executes the full test
-suite, creates the production bundles, and fails if any gzip size budget is
-exceeded. `npm run size` also reports raw, gzip, and Brotli sizes.
+Before submitting a change, run `npm run check`. It executes the full jsdom test
+suite, creates the production bundles, smoke-tests them, and fails if any gzip
+size budget is exceeded. `npm run test:browser` runs the Chromium smoke suite
+used by CI for CSP, Turbo, SSE, keyed focus preservation, late imports, Lite
+generation, and browser entry imports. `npm run check:ci` runs both paths.
+`npm run size` also reports raw, gzip, and Brotli sizes.
 
 `helium.js` contains the shared runtime plus sections marked Standard-only.
 `npm run generate` derives `helium-lite.js`; do not edit the generated Lite file
