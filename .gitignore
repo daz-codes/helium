@@ -1,3 +1,5 @@
 package-lock.json
 node_modules
 .claude/settings.local.json
+# ProtonDrive sync-conflict artifacts
+*(# Edit conflict *#)*
