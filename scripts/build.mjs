@@ -12,8 +12,8 @@ const outDir = resolve(root, "dist");
 
 // These names are private implementation fields. Restricting property mangling
 // to this allow-list keeps public APIs, user state, DOM APIs, and custom engines stable.
-const privateProperties = /^(observer|bindings|listeners|cleanups|processed|parentKeys|fnCache|proxyCache|root|cleanup|dependencies|initialExecution|classTokens|compiled|prop|calc|isHiddenAttr|keys|ok|result|receiver|handler|inits|parent|scopes|loop)$/;
-const litePrivateProperties = /^(observer|bindings|listeners|cleanups|processed|parentKeys|fnCache|proxyCache|root|cleanup|dependencies|initialExecution|classTokens|compiled|prop|calc|isHiddenAttr|keys|ok|result|receiver|handler|inits|parent|el|refs|event|execute|getIds)$/;
+const privateProperties = /^(observer|bindings|listeners|cleanups|processed|parentKeys|fnCache|proxyCache|root|cleanup|dependencies|initialExecution|classTokens|compiled|prop|calc|isHiddenAttr|keys|ok|result|receiver|handler|inits|parent|scopes|loop|owner|revision|singular|plural)$/;
+const litePrivateProperties = /^(observer|bindings|listeners|cleanups|processed|parentKeys|fnCache|proxyCache|root|cleanup|dependencies|initialExecution|classTokens|compiled|prop|calc|isHiddenAttr|keys|ok|result|receiver|handler|inits|parent|el|refs|event|execute|getIds|revision|singular|plural)$/;
 
 const entries = [
   ["helium.js", "helium.min.js", false, privateProperties],

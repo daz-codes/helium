@@ -7,11 +7,14 @@ const RESERVED = new Set(['undefined', 'null', 'true', 'false', 'NaN', 'Infinity
 const INPUT_EVENTS = { form: "submit", input: "input", textarea:"input", select:"change" };
 const KEY_MODS = { shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey" };
 // Modifiers that are flags rather than key names; used to find the key mod regardless of order
-const FLAG_MODS = new Set(["prevent", "once", "outside", "document", "stop"]);
-const isKeyMod = m => !FLAG_MODS.has(m) && !m.startsWith("debounce") && !KEY_MODS[m];
+const FLAG_MODS = new Set(["prevent", "once", "outside", "document", "window", "self", "capture", "passive", "stop"]);
+const isKeyMod = m => !FLAG_MODS.has(m) && !m.startsWith("debounce") && !m.startsWith("throttle") && !KEY_MODS[m];
 const STATE_FIRST_GLOBALS = new Set(["name", "length", "status", "top", "origin", "event", "closed", "parent"]);
 const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
-const debounce=(f,d)=>{let t;return(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a))}
+const debounce=(f,d)=>{let t;const g=(...a)=>(clearTimeout(t),t=setTimeout(f,d,...a));g.cancel=()=>clearTimeout(t);return g}
+// Leading + trailing throttle: run the first event immediately, then coalesce
+// events during the interval into one final call carrying the latest event.
+const throttle=(f,d)=>{let last,t,args;const later=()=>{t=0;last=Date.now();f(...args)};const g=(...a)=>{if(last==null){last=Date.now();return f(...a)}args=a;const wait=d-(Date.now()-last);if(wait<=0){clearTimeout(t);t=0;last=Date.now();return f(...a)}if(!t)t=setTimeout(later,wait)};g.cancel=()=>{clearTimeout(t);t=0};return g}
 const looksLikeExpression = value => {
   const v = String(value).trim();
   return /=>|&&|\|\||\?\?/.test(v)
@@ -70,10 +73,10 @@ const defaultEngine = {
   compile(expr, withReturn = true) {
     try {
       const fn = new Function(
-        "$scope",
+        "$ctx",
         withReturn
-          ? `with($scope){with($scope.$data){return(${expr.trim()})}}`
-          : `with($scope){with($scope.$data){${expr.trim()}}}`
+          ? `with($ctx){with($ctx.$data){return(${expr.trim()})}}`
+          : `with($ctx){with($ctx.$data){${expr.trim()}}}`
       );
       return {
         execute: (scope) => fn(scope),
@@ -94,6 +97,10 @@ const defaultEngine = {
       $data: ctx.state,
       $event: ctx.event,
       $el: ctx.el,
+      $root: ctx.rootElement,
+      $scope: ctx.scopeElement,
+      $refs: ctx.pluralRefs,
+      $dispatch: ctx.dispatch,
       $html: ctx.html,
       // @standard-start
       $get: ctx.get,
@@ -171,15 +178,14 @@ export function createHelium(options = {}) {
     };
     HELIUM.root = root;
 
-    const $ = s => document.querySelector(s);
     const html = s => Object.assign(document.createElement("template"),{innerHTML:String(s).trim()}).content.firstChild
 
     // @standard-start
-    const update = (data,targets,actions,template) => {
+    const update = (data,targets,actions,template,elCtx=root) => {
       if (!isCurrent()) return [];
       const newTargets = [];
       (targets || []).forEach((target,i) => {
-      const element = target instanceof Node ? target : (HELIUM.refs.get(target.trim()) || $(target.trim()));
+      const element = target instanceof Node ? target : (resolveRefs(elCtx, target.trim())[0] || document.querySelector(target.trim()));
         if(element){
           const content = template ? template(data) : data;
           const action = actions?.[i];
@@ -196,9 +202,9 @@ export function createHelium(options = {}) {
       return newTargets
     }
 
-  const ajax = (url,method,options={},params={}) => {
+  const ajax = (url,method,options={},params={},elCtx=root) => {
       if(options.loading) {
-        const loadingTargets = update(options.loading,options.target,options.action);
+        const loadingTargets = update(options.loading,options.target,options.action,undefined,elCtx);
         if(loadingTargets.length) options.target = loadingTargets;
       }
       const fd = params instanceof FormData, token = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -238,7 +244,7 @@ export function createHelium(options = {}) {
           if (type.includes("event-stream")) {
             const handler = configuredSSE || SSEHandler;
             if (!handler) throw new Error("SSE support requires @daz4126/helium/sse");
-            return handler(res, options, doFetch, update, isCurrent);
+            return handler(res, options, doFetch, (...args) => update(...args, elCtx), isCurrent);
           }
           return (type.includes("turbo-stream") ? res.text().then(data => ({ turbo: true, data })) :
                   type.includes("json")         ? res.json() :
@@ -247,7 +253,7 @@ export function createHelium(options = {}) {
           if (data === undefined) return; // SSE handled separately
           return (data && typeof data === "object" && data.turbo && window.Turbo)
             ? Turbo.renderStreamMessage(data.data)
-            : update(data, options.target, options.loading ? (options.action || []).map(a => a && "replace") : options.action, options.template)
+            : update(data, options.target, options.loading ? (options.action || []).map(a => a && "replace") : options.action, options.template, elCtx)
         });
 
       // Return the promise so callers can await, chain, and handle errors.
@@ -256,12 +262,19 @@ export function createHelium(options = {}) {
     }
 
     const opts = o => typeof o === "string" ? { target: [o], action: [null] } : o;
-    const get = (url, options={}) => ajax(url, "GET", opts(options));
-    const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(method => (url, params, options={}) => ajax(url, method, opts(options), params));
+    const get = (url, options={}, elCtx=root) => ajax(url, "GET", opts(options), {}, elCtx);
+    const [post, put, patch, del] = ["POST","PUT","PATCH","DELETE"].map(method =>
+      (url, params, options={}, elCtx=root) => ajax(url, method, opts(options), params, elCtx));
     // @standard-end
 
     // Track bindings currently being applied to prevent infinite recursion
     const applyingBindings = new Set();
+
+    // Ref snapshots are cached per explicit local scope and invalidated whenever
+    // a ref is added or removed. Each name maps to a Set so repeated refs retain
+    // element identity while plural access can return current DOM order.
+    let refsRevision = 0;
+    const refsSnapshots = new WeakMap();
 
     const safeApplyBinding = (b) => {
       if ((b.el !== root && !root.contains(b.el)) || applyingBindings.has(b)) return;
@@ -442,8 +455,8 @@ export function createHelium(options = {}) {
         }
       });
     };
-    const createLocalScope = source => {
-      const scope = { values: null, tokens: new Map() };
+    const createLocalScope = (source, owner = null) => {
+      const scope = { values: null, tokens: new Map(), owner };
       scope.values = createLocalValues(source, scope);
       return scope;
     };
@@ -469,6 +482,72 @@ export function createHelium(options = {}) {
 
     // Standard overlays the nearest element scope on the mounted root; the
     // generated Lite build leaves this as the root-only state view.
+    const scopeElementFor = el => {
+      // @standard-start
+      for (let current = el; current && current !== root.parentNode; current = current.parentNode) {
+        const elementScopes = HELIUM.scopes.get(current) || [];
+        for (let i = elementScopes.length - 1; i >= 0; i--) {
+          if (elementScopes[i].owner) return elementScopes[i].owner;
+        }
+        if (current === root) break;
+      }
+      // @standard-end
+      return root;
+    };
+    const scopeChainFor = el => {
+      const chain = [];
+      let current = scopeElementFor(el);
+      while (current) {
+        chain.push(current);
+        if (current === root) break;
+        current = scopeElementFor(current.parentNode);
+      }
+      return chain;
+    };
+    const refsInScope = (name, scopeEl) => [...(HELIUM.refs.get(name) || [])]
+      .filter(ref => (ref === root || root.contains(ref)) && scopeElementFor(ref) === scopeEl)
+      .sort((a, b) => a === b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    const resolveRefs = (el, name) => {
+      const key = name.startsWith("$") ? name : `$${name}`;
+      for (const scopeEl of scopeChainFor(el)) {
+        const refs = refsInScope(key, scopeEl);
+        if (refs.length) return refs;
+      }
+      return [];
+    };
+    const refScopeFor = el => {
+      const scopeEl = scopeElementFor(el);
+      const cached = refsSnapshots.get(scopeEl);
+      if (cached?.revision === refsRevision) return cached;
+      const singular = {};
+      for (const name of HELIUM.refs.keys()) {
+        const refs = resolveRefs(el, name);
+        if (!refs.length) continue;
+        singular[name] = refs[0];
+      }
+      // Plural refs are resolved live so missing names consistently return []
+      // and mutating a returned array cannot corrupt later lookups.
+      const plural = new Proxy({}, {
+        get: (_, name) => typeof name === "string" ? resolveRefs(scopeEl, name) : undefined
+      });
+      const snapshot = { revision: refsRevision, singular, plural };
+      refsSnapshots.set(scopeEl, snapshot);
+      return snapshot;
+    };
+    const queryHelpers = new WeakMap();
+    const queryFor = el => {
+      const scopeEl = scopeElementFor(el);
+      if (queryHelpers.has(scopeEl)) return queryHelpers.get(scopeEl);
+      const helpers = selector => document.querySelector(selector);
+      helpers.all = selector => [...document.querySelectorAll(selector)];
+      helpers.root = selector => root.querySelector(selector);
+      helpers.root.all = selector => [...root.querySelectorAll(selector)];
+      helpers.scope = selector => scopeEl.querySelector(selector);
+      helpers.scope.all = selector => [...scopeEl.querySelectorAll(selector)];
+      queryHelpers.set(scopeEl, helpers);
+      return helpers;
+    };
+
     const createScope = (el, event = {}, scopeState = state, extraScope, accessed) => {
       let scopedState = scopeState;
       // @standard-start
@@ -488,20 +567,33 @@ export function createHelium(options = {}) {
           }
         });
       // @standard-end
+      const refScope = refScopeFor(el);
       return engine.createScope({
-        $,
+        $: queryFor(el),
         state: scopedState,
         event,
         el,
+        rootElement: root,
+        scopeElement: scopeElementFor(el),
+        pluralRefs: refScope.plural,
+        dispatch: (name, detail = {}, options = {}) => {
+          const dispatched = new CustomEvent(name, {
+            detail,
+            bubbles: options.bubbles ?? true,
+            cancelable: options.cancelable ?? true
+          });
+          (options.target || el).dispatchEvent(dispatched);
+          return dispatched;
+        },
         html,
         // @standard-start
-        get,
-        post,
-        put,
-        patch,
-        del,
+        get: (url, options) => get(url, options, el),
+        post: (url, params, options) => post(url, params, options, el),
+        put: (url, params, options) => put(url, params, options, el),
+        patch: (url, params, options) => patch(url, params, options, el),
+        del: (url, params, options) => del(url, params, options, el),
         // @standard-end
-        refs: Object.fromEntries(HELIUM.refs)
+        refs: refScope.singular
       });
     };
 
@@ -583,6 +675,19 @@ export function createHelium(options = {}) {
   };
 
   // @standard-start
+  // Structural directives hand freshly inserted element nodes straight to
+  // processElements in one batch — one traversal for the whole render instead
+  // of one MutationObserver round-trip per row. Bindings still apply on the
+  // returned microtask, which resolves before the next paint.
+  const processNewNodes = nodes => {
+    if (!nodes.length) return;
+    processElements(nodes).then(({ bindings, inits }) => {
+      if (!isCurrent()) return;
+      bindings.forEach(safeApplyBinding);
+      runInits(inits);
+    });
+  };
+
   const renderFor = (b, value) => {
     const loop = b.loop, oldRows = loop[4], nextRows = new Map();
     // Iterate the raw array: per-item reads through the proxy layers are the
@@ -599,6 +704,7 @@ export function createHelium(options = {}) {
     // Previous DOM order of surviving rows, for minimal-move reordering below.
     const oldPositions = new Map();
     oldRows.forEach(row => oldPositions.set(row, oldPositions.size));
+    const newNodes = [];
 
     items.forEach((item, index) => {
       // Unwrap elements too: userland arrays ([...items, more]) hold reactive
@@ -641,7 +747,10 @@ export function createHelium(options = {}) {
         const clone = loop[3].cloneNode(true);
         row = { nodes: [...clone.childNodes], scope: createLocalScope(values) };
         row.nodes.forEach(node => {
-          if (node.nodeType === 1) addScope(node, row.scope);
+          if (node.nodeType === 1) {
+            addScope(node, row.scope);
+            newNodes.push(node);
+          }
         });
       }
       row.item = raw;
@@ -667,6 +776,7 @@ export function createHelium(options = {}) {
       if (!stable.has(i) && cursor.nextSibling !== node) cursor.after(node);
       cursor = node;
     }));
+    processNewNodes(newNodes);
   };
 
   const renderIf = (b, value) => {
@@ -682,6 +792,7 @@ export function createHelium(options = {}) {
         cursor.after(node);
         cursor = node;
       });
+      processNewNodes(nodes.filter(node => node.nodeType === 1));
     } else if (!value && shown.length) {
       cleanup(shown.filter(node => node.nodeType === 1));
       shown.forEach(node => node.remove());
@@ -760,7 +871,10 @@ export function createHelium(options = {}) {
           try { initCleanup(); }
           catch (error) { console.error("Helium cleanup:", error); }
         });
-        HELIUM.listeners.get(e)?.forEach(({receiver,event,handler}) => receiver.removeEventListener(event,handler));
+        HELIUM.listeners.get(e)?.forEach(({receiver,event,handler,options}) => {
+          handler.cancel?.();
+          receiver.removeEventListener(event,handler,options);
+        });
         HELIUM.listeners.delete(e);
         HELIUM.processed.delete(e);  // allow reprocessing if the same node is re-inserted
         // @standard-start
@@ -768,7 +882,10 @@ export function createHelium(options = {}) {
         // @standard-end
       });
       for (const [name, ref] of HELIUM.refs) {
-        if (removed.has(ref)) HELIUM.refs.delete(name);
+        let changed = false;
+        for (const element of ref) if (removed.has(element)) changed = ref.delete(element) || changed;
+        if (!ref.size) HELIUM.refs.delete(name);
+        if (changed) refsRevision++;
       }
       // Prune bindings that reference removed elements, otherwise they leak and keep
       // running on detached nodes every time state changes.
@@ -794,7 +911,10 @@ export function createHelium(options = {}) {
       const deferredBindings = [];
       const newInits = [];
 
-     const heElements = [element, ...element.querySelectorAll("*")].filter(e => {
+      // Accepts one root element or an array of roots (structural directives
+      // insert many sibling rows at once — one pass beats one call per row).
+      const roots = Array.isArray(element) ? element : [element];
+      const heElements = roots.flatMap(el => [el, ...el.querySelectorAll("*")]).filter(e => {
         if (HELIUM.processed.has(e)) return false;
         for (let i = 0; i < e.attributes.length; i++) {
           const n = e.attributes[i].name;
@@ -802,6 +922,9 @@ export function createHelium(options = {}) {
         }
         return false;
       });
+      // Mark the roots themselves (even attribute-less ones) so the
+      // MutationObserver skips nodes a structural render already handed to us.
+      roots.forEach(el => HELIUM.processed.add(el));
 
       // @standard-start
       const importPromises = [];
@@ -848,7 +971,7 @@ export function createHelium(options = {}) {
               console.warn("Helium @data expects an object:", dataAttr);
             } else if (el === root) {
               Object.assign(state, values);
-            } else addScope(el, createLocalScope(values));
+            } else addScope(el, createLocalScope(values, el));
           } catch (error) {
             console.warn("Helium @data error:", error.message);
           }
@@ -932,7 +1055,12 @@ export function createHelium(options = {}) {
             deferredBindings.push({el, prop: propName, compiled: compile(value, true, { label: name })});
           }
           else if (match(name, "ref")) {
-            HELIUM.refs.set("$" + value, el);
+            const key = "$" + value;
+            if (!HELIUM.refs.has(key)) HELIUM.refs.set(key, new Set());
+            if (!HELIUM.refs.get(key).has(el)) {
+              HELIUM.refs.get(key).add(el);
+              refsRevision++;
+            }
           }
           else if (match(name, "text", "html")) {
             deferredBindings.push({el, prop: match(name, "text") ? "textContent" : "innerHTML", compiled: compile(value, true, { label: name })});
@@ -978,23 +1106,21 @@ export function createHelium(options = {}) {
             const isHttpMethod = ["get", "post", "put", "patch", "delete"].includes(eventName);
             if (isHttpMethod) event = getEvent(el);
             // @standard-end
-            const receiver = mods.includes("outside") || mods.includes("document") ? document : el;
+            if (mods.includes("passive") && mods.includes("prevent")) {
+              const key = `event-options:${name}`;
+              if (!HELIUM.warnedCompiles.has(key)) {
+                HELIUM.warnedCompiles.add(key);
+                console.warn(`Helium event modifier warning [${name}]: .passive and .prevent cannot be combined`);
+              }
+              continue;
+            }
+            const receiver = mods.includes("outside") || mods.includes("document") ? document : mods.includes("window") ? window : el;
             const debounceMod = mods.find(m => m.startsWith("debounce"));
             const debounceDelay = debounceMod ? (t => t && !isNaN(t) ? Number(t) : 300)(debounceMod.split(":")[1]) : 0;
-            const _handler = e => {
-              if (!isCurrent()) return;
-              if (mods.includes("prevent")) e.preventDefault();
-              if (mods.includes("stop")) e.stopPropagation();
-              for (const [mod, prop] of Object.entries(KEY_MODS)) if (mods.includes(mod) && !e[prop]) return;
-              if (["keydown", "keyup", "keypress"].includes(event)) {
-                // Match the key name among the modifiers regardless of order (.ctrl.enter or .enter.ctrl)
-                const keyMod = mods.find(isKeyMod);
-                if (keyMod) {
-                  const keyName = e.key == " " ? "Space" : e.key == "Escape" ? "Esc" : e.key;
-                  if (keyName.toLowerCase() !== keyMod.toLowerCase()) return;
-                }
-              }
-              if (mods.includes("outside") && el.contains(e.target)) return;
+            const throttleMod = mods.find(m => m.startsWith("throttle"));
+            const throttleDelay = throttleMod ? (t => t && !isNaN(t) ? Number(t) : 300)(throttleMod.split(":")[1]) : 0;
+            const eventOptions = mods.includes("passive") ? { passive: true, capture: mods.includes("capture") } : mods.includes("capture");
+            const invoke = e => {
               // @standard-start
               if (isHttpMethod) {
                   const getAttr = a => el.getAttribute('data-he-' + a) || el.getAttribute('@' + a);
@@ -1024,7 +1150,7 @@ export function createHelium(options = {}) {
                   const paramsCompiled = compile(paramsAttr, true, { label: "@params", strict: true });
                   const params = paramsCompiled.execute(scope);
                   // Fire-and-forget from an attribute handler: log failures here.
-                  ajax(value, eventName.toUpperCase(), options, params)
+                  ajax(value, eventName.toUpperCase(), options, params, el)
                     .catch(err => console.error("AJAX:", err.message));
               } else
               // @standard-end
@@ -1040,12 +1166,31 @@ export function createHelium(options = {}) {
               // Remove after the action actually runs, so .once combined with a
               // key/outside filter fires once *when matched* (not on the first
               // raw event). This is why we don't use the { once: true } option.
-              if (mods.includes("once")) receiver.removeEventListener(event, handler);
+              if (mods.includes("once")) receiver.removeEventListener(event, handler, eventOptions);
             };
-            const handler = debounceDelay > 0 ? debounce(_handler, debounceDelay) : _handler;
-            receiver.addEventListener(event, handler);
+            const scheduled = debounceDelay > 0 ? debounce(invoke, debounceDelay)
+              : throttleDelay > 0 ? throttle(invoke, throttleDelay) : invoke;
+            const handler = e => {
+              if (!isCurrent()) return;
+              for (const [mod, prop] of Object.entries(KEY_MODS)) if (mods.includes(mod) && !e[prop]) return;
+              if (["keydown", "keyup", "keypress"].includes(event)) {
+                // Match the key name among the modifiers regardless of order (.ctrl.enter or .enter.ctrl)
+                const keyMod = mods.find(isKeyMod);
+                if (keyMod) {
+                  const keyName = e.key == " " ? "Space" : e.key == "Escape" ? "Esc" : e.key;
+                  if (keyName.toLowerCase() !== keyMod.toLowerCase()) return;
+                }
+              }
+              if (mods.includes("outside") && el.contains(e.target)) return;
+              if (mods.includes("self") && e.target !== el) return;
+              if (mods.includes("prevent")) e.preventDefault();
+              if (mods.includes("stop")) e.stopPropagation();
+              scheduled(e);
+            };
+            handler.cancel = scheduled.cancel;
+            receiver.addEventListener(event, handler, eventOptions);
             if (!HELIUM.listeners.has(el)) HELIUM.listeners.set(el, []);
-            HELIUM.listeners.get(el).push({receiver, event, handler});
+            HELIUM.listeners.get(el).push({receiver, event, handler, options: eventOptions});
           }
         }
       });
@@ -1060,6 +1205,10 @@ export function createHelium(options = {}) {
     HELIUM.observer?.disconnect();
     HELIUM.observer = new MutationObserver(async (ms) => {
       if (!isCurrent()) return;
+      // A retained ref may have moved within the DOM without being added or
+      // removed from the registry, so invalidate cached DOM ordering for every
+      // child-list batch when refs exist.
+      if (HELIUM.refs.size) refsRevision++;
       // One batched cleanup for everything detached in this mutation batch.
       const detached = [];
       for (const m of ms) {

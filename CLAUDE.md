@@ -19,7 +19,7 @@ npm run test:dist # Smoke-test every generated production bundle
 npm run test:browser # Run Chromium smoke tests against browser entry points
 npm run check     # Run tests, build, and enforce size budgets
 npm run check:ci  # Run check plus the real-browser smoke suite
-npm run bench     # Benchmark against Alpine.js in Chromium (scripts/benchmark.mjs)
+npm run bench     # Benchmark vs Alpine, React, Datastar in Chromium (scripts/benchmark.mjs)
 ```
 
 There is no consumer build requirement; the source files are browser-ready ES

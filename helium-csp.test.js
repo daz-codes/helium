@@ -504,6 +504,49 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       expect(state.value).toBe('test');
     });
 
+    it('should dispatch bubbling custom events with detail', async () => {
+      container.innerHTML = `
+        <div @notice="received = $event.detail.value">
+          <button @click="$dispatch('notice', { value: 7 })">Dispatch</button>
+        </div>
+      `;
+      const state = await helium({ received: 0 });
+
+      container.querySelector('button').click();
+
+      expect(state.received).toBe(7);
+    });
+
+    it('should support window, self, capture, and passive event modifiers', async () => {
+      container.innerHTML = `
+        <div @resize.window="windowCount++"></div>
+        <div id="parent" @click.capture="order.push('capture')" @mousedown.self="selfCount++">
+          <button @click.passive="order.push('target')"></button>
+        </div>
+      `;
+      const state = await helium({ windowCount: 0, selfCount: 0, order: [] });
+
+      window.dispatchEvent(new Event('resize'));
+      container.querySelector('button').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      container.querySelector('button').click();
+
+      expect(state.windowCount).toBe(1);
+      expect(state.selfCount).toBe(0);
+      expect([...state.order]).toEqual(['capture', 'target']);
+    });
+
+    it('should throttle with leading and trailing calls', async () => {
+      container.innerHTML = '<button @click.throttle:40="count++"></button>';
+      const state = await helium({ count: 0 });
+      const button = container.querySelector('button');
+
+      button.click();
+      button.click();
+      expect(state.count).toBe(1);
+      await new Promise(resolve => setTimeout(resolve, 60));
+      expect(state.count).toBe(2);
+    });
+
     it('should handle once modifier', async () => {
       container.innerHTML = '<button @click.once="count++">Click</button>';
       const state = await helium({ count: 0 });
@@ -533,6 +576,25 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       await helium({});
       // The span should display the input's value via the ref
       expect(container.querySelector('span').textContent).toBe('test');
+    });
+
+    it('should expose scoped plural refs and query helpers', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <span id="root-ref" @ref="hello"></span>
+        <section id="scope" @data="{ ready: true }">
+          <span id="first" class="item" @ref="hello"></span>
+          <span id="second" class="item" @ref="hello"></span>
+          <button @click="capture($root, $scope, $hello, $refs.hello, $.scope.all('.item'))"></button>
+        </section>
+      `;
+      await helium({ capture });
+
+      container.querySelector('button').click();
+
+      expect(capture).toHaveBeenCalledWith(container, container.querySelector('#scope'), container.querySelector('#first'), [
+        container.querySelector('#first'), container.querySelector('#second')
+      ], [...container.querySelectorAll('.item')]);
     });
   });
 

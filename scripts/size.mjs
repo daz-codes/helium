@@ -6,15 +6,15 @@ import { constants, brotliCompressSync, gzipSync } from "node:zlib";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
 
-// Relaxed post-scope ceilings. They retain regression guardrails without
-// forcing new runtime work into the old pre-scope targets. Tighten them after a
-// dedicated size pass rather than while designing features.
+// RC.3 scope/event ceilings. They retain a small margin over the measured
+// production bundles so later regressions fail without making normal minifier
+// variation look like a release blocker.
 const budgets = {
-  "helium.min.js": 7900,
-  "helium-lite.min.js": 5200,
-  "helium-sse.min.js": 8300,
-  "helium-csp.min.js": 12000,
-  "helium-csp-sse.min.js": 12500,
+  "helium.min.js": 8900,
+  "helium-lite.min.js": 5600,
+  "helium-sse.min.js": 9300,
+  "helium-csp.min.js": 13000,
+  "helium-csp-sse.min.js": 13400,
 };
 
 const rows = [];

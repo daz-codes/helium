@@ -113,10 +113,18 @@ async function loadHelium(page, entry, markup, state = {}) {
 async function testStandard(baseUrl, browser) {
   await withPage(browser, baseUrl, "/blank.html", async page => {
     await loadHelium(page, `${baseUrl}/dist/helium.min.js`, `
-      <main data-helium>
+      <main id="app" data-helium @notice="received = $event.detail.value">
         <span id="root" @text="count"></span>
-        <section @data="{ count: 10 }">
+        <button id="dispatch" @click="$dispatch('notice', { value: 9 })"></button>
+        <i id="window-listener" @resize.window="windowCount++"></i>
+        <div id="self-listener" @mousedown.self="selfCount++"><i id="self-child"></i></div>
+        <div id="capture-parent" @click.capture="order.push('capture')"><button id="capture-child" @click.passive="order.push('target')"></button></div>
+        <button id="throttle" @click.throttle:40="throttled++"></button>
+        <section id="local-scope" @data="{ count: 10 }">
+          <i id="ref-one" class="ref-item" @ref="thing"></i>
+          <i id="ref-two" class="ref-item" @ref="thing"></i>
           <button id="local" @click="count++"></button>
+          <button id="inspect" @click="$el.dataset.result = [$root.id, $scope.id, $thing.id, $refs.thing.length, $.scope.all('.ref-item').length].join(':')"></button>
           <b id="local-count" @text="count"></b>
         </section>
         <template @for="item in items" :key="item.id">
@@ -125,12 +133,50 @@ async function testStandard(baseUrl, browser) {
       </main>
     `, {
       count: 1,
+      received: 0,
+      windowCount: 0,
+      selfCount: 0,
+      order: [],
+      throttled: 0,
       items: [{ id: 1, name: "One" }, { id: 2, name: "Two" }],
     });
 
     await page.locator("#local").click();
     await expectText(page, "#local-count", "11");
     await expectText(page, "#root", "1");
+    await page.locator("#inspect").click();
+    assert(await page.locator("#inspect").getAttribute("data-result") === "app:local-scope:ref-one:2:2",
+      "standard bundle did not expose scoped root/query/ref helpers");
+
+    await page.locator("#dispatch").click();
+    await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+    await page.locator("#self-child").dispatchEvent("mousedown");
+    await page.locator("#capture-child").click();
+    await page.evaluate(() => {
+      document.querySelector("#throttle").click();
+      document.querySelector("#throttle").click();
+    });
+    let eventState = await page.evaluate(() => ({
+      received: window.__heliumState.received,
+      windowCount: window.__heliumState.windowCount,
+      selfCount: window.__heliumState.selfCount,
+      order: [...window.__heliumState.order],
+      throttled: window.__heliumState.throttled,
+    }));
+    assert(eventState.received === 9, "standard bundle did not dispatch a bubbling custom event");
+    assert(eventState.windowCount === 1, "standard bundle did not handle a window listener");
+    assert(eventState.selfCount === 0, "standard bundle self listener accepted a child event");
+    assert(eventState.order.join(",") === "capture,target", "standard bundle did not honor capture order");
+    assert(eventState.throttled === 1, "standard bundle throttle did not invoke the leading event");
+    await page.waitForTimeout(60);
+    assert(await page.evaluate(() => window.__heliumState.throttled) === 2,
+      "standard bundle throttle did not invoke one trailing event");
+
+    await page.locator("#window-listener").evaluate(element => element.remove());
+    await tick(page);
+    await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+    assert(await page.evaluate(() => window.__heliumState.windowCount) === 1,
+      "standard bundle leaked a detached window listener");
 
     await page.locator('[data-id="1"]').focus();
     await page.evaluate(() => {
@@ -170,18 +216,39 @@ async function testLite(baseUrl, browser) {
 async function testCsp(baseUrl, browser) {
   await withPage(browser, baseUrl, "/csp.html", async page => {
     await loadHelium(page, `${baseUrl}/dist/helium-csp.min.js`, `
-      <main data-helium>
-        <section @data="{ count: 2 }">
+      <main id="app" data-helium @notice="received = $event.detail.value">
+        <button id="dispatch" @click="$dispatch('notice', { value: 6 })"></button>
+        <button id="throttle" @click.throttle:40="throttled++"></button>
+        <section id="local-scope" @data="{ count: 2 }">
+          <i id="ref-one" class="ref-item" @ref="thing"></i>
+          <i id="ref-two" class="ref-item" @ref="thing"></i>
           <button id="inc" @click="count++"></button>
+          <button id="inspect" @click="$el.dataset.result = [$root.id, $scope.id, $thing.id, $refs.thing.length, $.scope.all('.ref-item').length].join(':')"></button>
           <b id="local" @text="count"></b>
         </section>
         <span id="root" @text="count"></span>
       </main>
-    `, { count: 20 });
+    `, { count: 20, received: 0, throttled: 0 });
 
     await page.locator("#inc").click();
     await expectText(page, "#local", "3");
     await expectText(page, "#root", "20");
+    await page.locator("#inspect").click();
+    assert(await page.locator("#inspect").getAttribute("data-result") === "app:local-scope:ref-one:2:2",
+      "CSP bundle did not expose scoped root/query/ref helpers");
+
+    await page.locator("#dispatch").click();
+    await page.evaluate(() => {
+      document.querySelector("#throttle").click();
+      document.querySelector("#throttle").click();
+    });
+    assert(await page.evaluate(() => window.__heliumState.received) === 6,
+      "CSP bundle did not dispatch a bubbling custom event");
+    assert(await page.evaluate(() => window.__heliumState.throttled) === 1,
+      "CSP bundle throttle did not invoke the leading event");
+    await page.waitForTimeout(60);
+    assert(await page.evaluate(() => window.__heliumState.throttled) === 2,
+      "CSP bundle throttle did not invoke one trailing event");
   });
 }
 

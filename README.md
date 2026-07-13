@@ -18,7 +18,7 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 Helium is designed for developers who want:
 
-- **Lightweight** - About 4.6–11.9KB minified and gzipped, depending on the build
+- **Lightweight** - About 5.5–13.3KB minified and gzipped, depending on the build
 - **Powerful** - Declarative JavaScript in your HTML
 - **Zero build step** - Works directly in the browser with no compiling
 - **Easy to learn** - If you know HTML and basic JavaScript, you're ready
@@ -113,11 +113,11 @@ import helium from "@daz4126/helium/csp"
 | SSE | Add-on | ❌ | Add-on |
 | Turbo integration | ✅ | ❌ | ✅ |
 | CSP safe | ❌ | ❌ | ✅ |
-| Approx. min+gzip size | 7.59KB | 4.56KB | 11.51KB |
+| Approx. min+gzip size | 8.79KB | 5.52KB | 12.89KB |
 
 Sizes are enforced against the production Terser builds with gzip level 9. The
-CSP figure includes its expression parser. Adding SSE produces 7.97KB Standard
-and 11.88KB CSP bundles.
+CSP figure includes its expression parser. Adding SSE produces 9.17KB Standard
+and 13.27KB CSP bundles.
 
 Lite is generated from the same global-state reactive core as Standard. It has
 identical deep/shared reactivity, lifecycle, binding, and cleanup behavior for
@@ -467,13 +467,26 @@ subtree, `$data` is the scoped state view. Local values are not returned from
 
 ### @ref
 
-Creates a reference to the element that can be used in JavaScript expressions. References are prefixed with `$` when accessed.
+Creates a scoped reference to an element. The first matching element is
+available through `$name`, and every matching element is available as the
+always-array `$refs.name` in current DOM order:
 
 ```html
-<ul @ref="list"></ul>
+<section @data="{ items: [] }">
+  <ul @ref="list"></ul>
+  <div @ref="row"></div>
+  <div @ref="row"></div>
+  <button @click="console.log($list, $refs.row)">Inspect refs</button>
+</section>
 ```
 
-This element can then be accessed in other JavaScript expressions as `$list`:
+Ref lookup starts in the nearest explicit `@data` scope and falls back through
+parent scopes. A ref with the same name in a nested scope shadows the outer
+name. Lite has one root scope, so all of its refs belong to the mounted root.
+When refs are removed or reordered, singular and plural lookup follows the
+current DOM.
+
+This element can be accessed in other JavaScript expressions as `$list`:
 
 ```html
 <button @click="$list.appendChild($html('<li>New item</li>'))">Add Task</button>
@@ -663,10 +676,21 @@ You can add modifiers by appending them with a dot (`.`) after the event name:
 - **once** - Only runs the event handler once, then removes the listener
 - **outside** - Only fires when the event happens outside the element
 - **document** - Attaches the listener to the document instead of the element
+- **window** - Attaches the listener to `window` instead of the element
+- **self** - Only fires when the element itself is the event target
+- **capture** - Handles the event during the capture phase
+- **passive** - Registers a native passive listener
 - **debounce** - Debounces the event handler (default 300ms)
 - **debounce:500** - Debounces with custom delay in milliseconds
+- **throttle** - Runs immediately, then at most once per interval (default 300ms)
+- **throttle:500** - Throttles with a custom interval in milliseconds
 - **shift, ctrl, alt, meta** - Only fires if the modifier key is pressed
 - **Key names** - For keyboard events, specify which key (e.g., `enter`, `esc`, `space`)
+
+Throttle uses leading and trailing calls: the first matching event runs
+immediately, and events received during the interval are coalesced into one
+final call using the latest event. `.passive.prevent` is invalid because a
+passive listener cannot cancel an event; Helium warns and does not register it.
 
 **Examples:**
 
@@ -697,6 +721,12 @@ You can add modifiers by appending them with a dot (`.`) after the event name:
 
 <!-- Listen on document level -->
 <div @keydown.document.esc="closeModal()">Press ESC anywhere</div>
+
+<!-- Window listener with throttled updates -->
+<div @resize.window.throttle:100="measureLayout()"></div>
+
+<!-- Ignore clicks that originated in descendants -->
+<button @click.self="select()"><span>Select</span></button>
 ```
 
 **Alias:** Prepend the event name with `data-he-`, for example `data-he-click="count++"`
@@ -1015,12 +1045,25 @@ You can also use a string:
 These special variables are available in all JavaScript expressions:
 
 ### $
-Alias for `document.querySelector` - quickly select elements:
+The `$` query helper preserves `document.querySelector` as its default and adds
+array-returning plural and scoped forms:
 
 ```html
 <div @click="$('#header').classList.add('active')">Activate Header!</div>
 <button @click="$('.sidebar').style.display = 'none'">Hide Sidebar</button>
 ```
+
+```js
+$(selector)                 // first match in document
+$.all(selector)             // all matches in document
+$.root(selector)            // first descendant match in $root
+$.root.all(selector)        // all descendant matches in $root
+$.scope(selector)           // first descendant match in $scope
+$.scope.all(selector)       // all descendant matches in $scope
+```
+
+The plural forms return normal arrays. Like `querySelector`, the root and scope
+forms search descendants and do not include `$root` or `$scope` themselves.
 
 ### $el
 Reference to the current element:
@@ -1031,6 +1074,17 @@ Reference to the current element:
 <input @input="console.log($el.value)">
 ```
 
+### $root
+
+The actual root element owned by the current Helium instance. This is the
+element selected by `@helium`/`data-helium`, the element passed to
+`helium.mount()`, or `document.body` for the default fallback root.
+
+### $scope
+
+The nearest element that declares local `@data` state, falling back to `$root`.
+Lite has no local data scopes, so `$scope` and `$root` are always the same.
+
 ### $event
 The event object (available in event handlers):
 
@@ -1039,6 +1093,21 @@ The event object (available in event handlers):
 <input @keydown="$event.key === 'Enter' && submit()">
 <form @submit="$event.preventDefault(); handleSubmit()">
 ```
+
+### $dispatch
+
+Dispatch a bubbling, cancelable `CustomEvent` from the current element. The
+event is returned, so callers can inspect `defaultPrevented`:
+
+```html
+<section @cart:add="total += $event.detail.price">
+  <button @click="$dispatch('cart:add', { price: 12 })">Add</button>
+</section>
+```
+
+The signature is `$dispatch(name, detail = {}, options = {})`. Options can set
+`target` (default `$el`), `bubbles` (default `true`), and `cancelable` (default
+`true`).
 
 ### $data
 The reactive data object containing all Helium variables:
@@ -1075,12 +1144,17 @@ The arguments are `url`,`params` (not for `$get`) and `options`. `options` is an
 
 ### Named refs
 
-Each element marked with `@ref="name"` is available as `$name`. There is no
-separate `$refs` object:
+The first element marked with `@ref="name"` in the nearest defining scope is
+available as `$name`. `$refs.name` is an array of every matching ref in that
+scope, in current DOM order:
 
 ```html
 <input @ref="username">
 <button @click="console.log($username.value)">Log Username</button>
+
+<div @ref="item"></div>
+<div @ref="item"></div>
+<button @click="console.log($refs.item.length)">Log item count</button>
 ```
 
 ## Functions
@@ -1346,9 +1420,10 @@ import helium from "@daz4126/helium/csp"
 
 **Benchmarking:**
 
-The repo includes a head-to-head runtime benchmark against Alpine.js (keyed
-list create/update/swap/clear plus rapid counter updates, run in real
-Chromium). Run it with:
+The repo includes a head-to-head runtime benchmark against Alpine.js, React,
+and Datastar (keyed list create/update/swap/clear plus rapid counter updates,
+run in real Chromium; Datastar only runs the counter test since it renders
+lists server-side). Run it with:
 
 ```bash
 npm run bench                    # defaults: 1000 rows, 7 runs

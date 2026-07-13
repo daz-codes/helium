@@ -138,26 +138,35 @@ The validator-friendly form is `data-he-attr:name`, such as
 <button @click="count++">Increment</button>
 <form @submit.prevent="save()"></form>
 <input @input.debounce:300="search = $event.target.value">
+<div @scroll.window.throttle:100="measure()"></div>
 <input @keydown.ctrl.enter="submit()">
 <div @click.outside="open = false"></div>
+<button @click.self="select()"><span>Select</span></button>
 ```
 
 Event aliases use `data-he-<event>`, for example
 `data-he-click="count++"`. Supported modifiers include `prevent`, `stop`,
-`once`, `outside`, `document`, `debounce[:milliseconds]`, modifier keys, and
-keyboard key names.
+`once`, `outside`, `document`, `window`, `self`, `capture`, `passive`,
+`debounce[:milliseconds]`, `throttle[:milliseconds]`, modifier keys, and
+keyboard key names. Throttle is leading plus trailing and defaults to 300ms.
+`.passive.prevent` is invalid and the listener is not registered.
 
 ### Refs and initialization
 
 ```html
 <form @ref="form"></form>
 <button @click="$form.reset()">Reset</button>
+<div @ref="item"></div>
+<div @ref="item"></div>
+<button @click="console.log($refs.item)">Log items</button>
 <div @init="startClock($el)"></div>
 ```
 
-`@ref="form"` exposes the element as `$form`; there is no `$refs` object. If an
-`@init` expression returns a function, Helium calls it when the element is
-removed or the instance is torn down.
+`@ref="form"` exposes the first scoped element as `$form`; `$refs.form` is an
+array of all matching refs in current DOM order. Ref names resolve from the
+nearest local `@data` scope outward. If an `@init` expression returns a
+function, Helium calls it when the element is removed or the instance is torn
+down.
 
 ## HTTP and imports
 
@@ -178,10 +187,17 @@ configuration uses `@target`, `@params`, `@template`, `@loading`, and `@options`
 
 - `$data`: current reactive state.
 - `$el`: element owning the expression.
+- `$root`: actual root element owned by the Helium instance.
+- `$scope`: nearest local `@data` element, or `$root` when none exists.
 - `$event`: current event.
-- `$`: `document.querySelector`.
+- `$dispatch(name, detail, options)`: dispatch a bubbling, cancelable
+  `CustomEvent` from `$el` and return it. Options may override `target`,
+  `bubbles`, and `cancelable`.
+- `$`: `document.querySelector`; also provides `$.all`, `$.root`,
+  `$.root.all`, `$.scope`, and `$.scope.all`.
 - `$html`: create one DOM node from an HTML string.
-- `$name`: an element declared with `@ref="name"`.
+- `$name`: first scoped element declared with `@ref="name"`.
+- `$refs.name`: array of every matching ref in the nearest defining scope.
 - `$get` / `$post` / `$put` / `$patch` / `$delete`: Standard/CSP requests.
 
 Magic values are expression locals. Functions stored in state do not capture

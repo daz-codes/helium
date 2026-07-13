@@ -1,12 +1,19 @@
-// Head-to-head runtime benchmark: Helium (dist/helium.min.js) vs Alpine.js
-// (devDependency), run in real Chromium via Playwright. Measures keyed-list
-// operations and rapid scalar updates; reports the median of several runs.
+// Head-to-head runtime benchmark: Helium (dist/helium.min.js) vs Alpine.js,
+// React 18, and Datastar (all devDependencies), run in real Chromium via
+// Playwright. Measures keyed-list operations and rapid scalar updates and
+// reports the median of several runs.
 //
 // Usage: npm run bench          (builds dist/ first)
 //        node scripts/benchmark.mjs [--rows 1000] [--runs 7]
 //
-// Results are wall-clock and machine-dependent — compare the two columns
-// against each other, not against previous absolute numbers.
+// Notes on fairness:
+// - Results are wall-clock (work + paint, via double-rAF) and machine
+//   dependent; ~16-33ms of every number is the frame wait itself.
+// - React rows use memo() — the idiomatic optimized-list pattern.
+// - Datastar has no client-side list rendering (lists are server-rendered
+//   and merged over SSE by design), so it only runs the init and counter
+//   tests; its counter loop goes through real click dispatches because its
+//   expressions are statement-splitting and can't hold a for-loop.
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve, dirname, extname } from "node:path";
@@ -23,8 +30,7 @@ const ROWS = arg("rows", 1000);
 const INCREMENTS = arg("increments", 5000);
 const RUNS = arg("runs", 7);
 
-// The two pages express the same app in each library's idiom. Both expose the
-// same window.* hooks so a single driver can run either page.
+// Every page exposes the same window.hooks so a single driver runs them all.
 const heliumPage = `<!doctype html>
 <meta charset="utf-8"><title>Helium bench</title>
 <div data-helium>
@@ -81,7 +87,58 @@ const alpinePage = `<!doctype html>
 </script>
 <script src="/node_modules/alpinejs/dist/cdn.min.js" defer></script>`;
 
-const pages = new Map([["/helium.html", heliumPage], ["/alpine.html", alpinePage]]);
+const reactPage = `<!doctype html>
+<meta charset="utf-8"><title>React bench</title>
+<div id="root"></div>
+<script src="/node_modules/react/umd/react.production.min.js"></script>
+<script src="/node_modules/react-dom/umd/react-dom.production.min.js"></script>
+<script>
+  const { useState, useEffect, memo, createElement: h } = React;
+  const Row = memo(({ id, label }) => h("tr", null, h("td", null, id), h("td", null, label)));
+  function App() {
+    const [items, setItems] = useState([]);
+    const [count, setCount] = useState(0);
+    useEffect(() => {
+      window.hooks = {
+        setItems,
+        updateEvery10th: () => setItems(prev =>
+          prev.map((it, i) => i % 10 === 0 ? { ...it, label: it.label + " !!!" } : it)),
+        swapRows: () => setItems(prev => {
+          const a = prev.slice(), j = a.length - 2;
+          [a[1], a[j]] = [a[j], a[1]];
+          return a;
+        }),
+        increment: n => { for (let i = 0; i < n; i++) setCount(c => c + 1); },
+      };
+    }, []);
+    return h("div", null,
+      h("p", null, h("span", { id: "counter" }, count)),
+      h("table", null, h("tbody", null,
+        items.map(it => h(Row, { key: it.id, id: it.id, label: it.label })))));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>`;
+
+const datastarPage = `<!doctype html>
+<meta charset="utf-8"><title>Datastar bench</title>
+<div data-signals-count="0">
+  <p><span id="counter" data-text="$count">0</span></p>
+  <button id="bump" data-on-click="$count++" hidden></button>
+</div>
+<script type="module" src="/node_modules/@starfederation/datastar/dist/datastar.js"></script>
+<script type="module">
+  const bump = document.getElementById("bump");
+  window.hooks = {
+    increment: n => { for (let i = 0; i < n; i++) bump.click(); },
+  };
+</script>`;
+
+const pages = new Map([
+  ["/helium.html", heliumPage],
+  ["/alpine.html", alpinePage],
+  ["/react.html", reactPage],
+  ["/datastar.html", datastarPage],
+]);
 const mime = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript" };
 
 const server = createServer(async (req, res) => {
@@ -123,7 +180,7 @@ const expect = async (page, expr, expected, label) => {
   if (actual !== expected) throw new Error(`${label}: expected ${expected}, got ${actual}`);
 };
 
-async function benchmark(browser, url) {
+async function benchmark(browser, url, { lists = true } = {}) {
   const samples = {};
   const record = (name, value) => (samples[name] ||= []).push(value);
 
@@ -134,16 +191,18 @@ async function benchmark(browser, url) {
     await page.waitForFunction("!!window.hooks");
     record("page init", Date.now() - t0);
 
-    record(`create ${ROWS} rows`, await timeHook(page, "setItems", makeRows(ROWS)));
-    await expect(page, "document.querySelectorAll('tbody tr').length", ROWS, "create");
+    if (lists) {
+      record(`create ${ROWS} rows`, await timeHook(page, "setItems", makeRows(ROWS)));
+      await expect(page, "document.querySelectorAll('tbody tr').length", ROWS, "create");
 
-    record("update every 10th row", await timeHook(page, "updateEvery10th"));
-    await expect(page, "document.querySelector('tbody td:nth-child(2)').textContent.endsWith('!!!')", true, "update");
+      record("update every 10th row", await timeHook(page, "updateEvery10th"));
+      await expect(page, "document.querySelector('tbody td:nth-child(2)').textContent.endsWith('!!!')", true, "update");
 
-    record("swap two rows", await timeHook(page, "swapRows"));
+      record("swap two rows", await timeHook(page, "swapRows"));
 
-    record(`clear ${ROWS} rows`, await timeHook(page, "setItems", []));
-    await expect(page, "document.querySelectorAll('tbody tr').length", 0, "clear");
+      record(`clear ${ROWS} rows`, await timeHook(page, "setItems", []));
+      await expect(page, "document.querySelectorAll('tbody tr').length", 0, "clear");
+    }
 
     record(`${INCREMENTS} counter increments`, await timeHook(page, "increment", INCREMENTS));
     await expect(page, "document.getElementById('counter').textContent", String(INCREMENTS), "increment");
@@ -158,16 +217,22 @@ async function benchmark(browser, url) {
 const browser = await chromium.launch();
 try {
   console.log(`Benchmarking ${ROWS} keyed rows, ${INCREMENTS} increments, median of ${RUNS} runs...`);
-  const helium = await benchmark(browser, `http://127.0.0.1:${port}/helium.html`);
-  const alpine = await benchmark(browser, `http://127.0.0.1:${port}/alpine.html`);
+  const results = {
+    helium: await benchmark(browser, `http://127.0.0.1:${port}/helium.html`),
+    alpine: await benchmark(browser, `http://127.0.0.1:${port}/alpine.html`),
+    react: await benchmark(browser, `http://127.0.0.1:${port}/react.html`),
+    datastar: await benchmark(browser, `http://127.0.0.1:${port}/datastar.html`, { lists: false }),
+  };
 
-  console.table(Object.keys(helium).map(op => ({
-    operation: op,
-    "helium (ms)": +helium[op].toFixed(1),
-    "alpine (ms)": +alpine[op].toFixed(1),
-    "alpine/helium": +(alpine[op] / helium[op]).toFixed(2),
-  })));
-  console.log("alpine/helium > 1 means Helium is faster for that operation.");
+  console.table(Object.keys(results.helium).map(op => {
+    const row = { operation: op };
+    for (const [name, samples] of Object.entries(results)) {
+      row[`${name} (ms)`] = samples[op] === undefined ? "—" : +samples[op].toFixed(1);
+    }
+    return row;
+  }));
+  console.log("Lower is better. Datastar renders lists server-side, so list operations don't apply;");
+  console.log("its counter goes through real click dispatches (see file header).");
 } finally {
   await browser.close();
   server.close();

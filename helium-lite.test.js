@@ -281,6 +281,32 @@ describe('Helium Lite', () => {
 
       expect(state.count).toBe(1);
     });
+
+    it('should support dispatch, window, self, and throttle event behavior', async () => {
+      container.innerHTML = `
+        <div @notice="received = $event.detail.value">
+          <button id="dispatch" @click="$dispatch('notice', { value: 4 })"></button>
+        </div>
+        <div @resize.window="windowCount++"></div>
+        <div id="self" @mousedown.self="selfCount++"><i></i></div>
+        <button id="throttle" @click.throttle:40="throttled++"></button>
+      `;
+      const state = await helium({ received: 0, windowCount: 0, selfCount: 0, throttled: 0 });
+
+      container.querySelector('#dispatch').click();
+      window.dispatchEvent(new Event('resize'));
+      container.querySelector('#self i').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      const throttled = container.querySelector('#throttle');
+      throttled.click();
+      throttled.click();
+
+      expect(state.received).toBe(4);
+      expect(state.windowCount).toBe(1);
+      expect(state.selfCount).toBe(0);
+      expect(state.throttled).toBe(1);
+      await new Promise(resolve => setTimeout(resolve, 60));
+      expect(state.throttled).toBe(2);
+    });
   });
 
   describe('@calculate', () => {
@@ -310,6 +336,22 @@ describe('Helium Lite', () => {
       container.querySelector('button').click();
 
       expect(state.seen).toBe('undefined');
+    });
+
+    it('should expose plural refs and root-scoped query helpers', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <span id="first" class="item" @ref="hello"></span>
+        <span id="second" class="item" @ref="hello"></span>
+        <button @click="capture($root, $scope, $hello, $refs.hello, $.scope.all('.item'))"></button>
+      `;
+      await helium({ capture });
+
+      container.querySelector('button').click();
+
+      expect(capture).toHaveBeenCalledWith(container, container, container.querySelector('#first'), [
+        container.querySelector('#first'), container.querySelector('#second')
+      ], [...container.querySelectorAll('.item')]);
     });
   });
 

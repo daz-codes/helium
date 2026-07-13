@@ -384,9 +384,11 @@ describe('Helium Reactive Library', () => {
       const input = container.querySelector('input');
 
       // non-matching key should be ignored even though .prevent is last
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', cancelable: true }));
+      const other = new KeyboardEvent('keydown', { key: 'a', cancelable: true });
+      input.dispatchEvent(other);
       await new Promise(r => setTimeout(r, 0));
       expect(state.pressed).toBe(false);
+      expect(other.defaultPrevented).toBe(false);
 
       // matching key still fires and the .prevent modifier still applies
       const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
@@ -409,6 +411,128 @@ describe('Helium Reactive Library', () => {
 
       await new Promise(resolve => setTimeout(resolve, 150));
       expect(state.value).toBe('test');
+    });
+
+    it('should dispatch bubbling custom events with detail and return the event', async () => {
+      container.innerHTML = `
+        <div @notice="received = $event.detail.value, $event.preventDefault()">
+          <button @click="cancelled = $dispatch('notice', { value: 7 }).defaultPrevented">Dispatch</button>
+        </div>
+      `;
+      const state = await helium({ received: 0, cancelled: false });
+
+      container.querySelector('button').click();
+
+      expect(state.received).toBe(7);
+      expect(state.cancelled).toBe(true);
+    });
+
+    it('should support dispatch target, bubbles, and cancelable options', async () => {
+      container.innerHTML = `
+        <div @notice="rootCount++">
+          <section @ref="recipient" @notice="targetCount++">
+            <button @click="notCancelable = !$dispatch('notice', {}, { target: $recipient, bubbles: false, cancelable: false }).cancelable"></button>
+          </section>
+        </div>
+      `;
+      const state = await helium({ rootCount: 0, targetCount: 0, notCancelable: false });
+
+      container.querySelector('button').click();
+
+      expect(state.targetCount).toBe(1);
+      expect(state.rootCount).toBe(0);
+      expect(state.notCancelable).toBe(true);
+    });
+
+    it('should listen on window and remove the listener when its element is detached', async () => {
+      container.innerHTML = '<div @resize.window="count++"></div>';
+      const state = await helium({ count: 0 });
+      const listener = container.querySelector('div');
+
+      window.dispatchEvent(new Event('resize'));
+      expect(state.count).toBe(1);
+
+      listener.remove();
+      await tick();
+      window.dispatchEvent(new Event('resize'));
+      expect(state.count).toBe(1);
+    });
+
+    it('should only run self handlers for events targeting the element itself', async () => {
+      container.innerHTML = '<div id="parent" @click.self="count++"><button></button></div>';
+      const state = await helium({ count: 0 });
+
+      container.querySelector('button').click();
+      expect(state.count).toBe(0);
+
+      container.querySelector('#parent').click();
+      expect(state.count).toBe(1);
+    });
+
+    it('should attach capture and passive listeners with native event options', async () => {
+      container.innerHTML = '<div @click.capture="order.push(\'parent\')"><button @click.passive="order.push(\'child\')"></button></div>';
+      const button = container.querySelector('button');
+      const addSpy = vi.spyOn(button, 'addEventListener');
+      const state = await helium({ order: [] });
+
+      expect(addSpy).toHaveBeenCalledWith('click', expect.any(Function), { passive: true, capture: false });
+      button.click();
+      expect([...state.order]).toEqual(['parent', 'child']);
+      addSpy.mockRestore();
+    });
+
+    it('should reject the incompatible passive.prevent combination', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      container.innerHTML = '<button @click.passive.prevent="count++"></button>';
+      const state = await helium({ count: 0 });
+
+      container.querySelector('button').click();
+
+      expect(state.count).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('.passive and .prevent cannot be combined'));
+      warnSpy.mockRestore();
+    });
+
+    it('should throttle with an immediate leading call and one trailing call', async () => {
+      container.innerHTML = '<button @click.throttle:40="count++"></button>';
+      const state = await helium({ count: 0 });
+      const button = container.querySelector('button');
+
+      button.click();
+      button.click();
+      button.click();
+      expect(state.count).toBe(1);
+
+      await new Promise(resolve => setTimeout(resolve, 60));
+      expect(state.count).toBe(2);
+    });
+
+    it('should cancel pending throttled work when the element is detached', async () => {
+      container.innerHTML = '<button @click.throttle:40="count++"></button>';
+      const state = await helium({ count: 0 });
+      const button = container.querySelector('button');
+
+      button.click();
+      button.click();
+      expect(state.count).toBe(1);
+      button.remove();
+      await tick();
+
+      await new Promise(resolve => setTimeout(resolve, 60));
+      expect(state.count).toBe(1);
+    });
+
+    it('should cancel pending debounced work when the element is detached', async () => {
+      container.innerHTML = '<button @click.debounce:40="count++"></button>';
+      const state = await helium({ count: 0 });
+      const button = container.querySelector('button');
+
+      button.click();
+      button.remove();
+      await tick();
+
+      await new Promise(resolve => setTimeout(resolve, 60));
+      expect(state.count).toBe(0);
     });
 
     it('should handle once modifier', async () => {
@@ -493,6 +617,105 @@ describe('Helium Reactive Library', () => {
       expect(state.seen).toBe('undefined');
     });
 
+    it('should expose singular and plural refs in DOM order', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <span id="first" @ref="hello"></span>
+        <span id="second" @ref="hello"></span>
+        <button @click="capture($hello, $refs.hello, $refs.missing)"></button>
+      `;
+      await helium({ capture });
+
+      container.querySelector('button').click();
+
+      expect(capture).toHaveBeenCalledWith(
+        container.querySelector('#first'),
+        [container.querySelector('#first'), container.querySelector('#second')],
+        []
+      );
+    });
+
+    it('should isolate refs by local @data scope and fall back lexically', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <section @data="{ outer: true }">
+          <span id="outer-first" @ref="hello"></span>
+          <span id="outer-second" @ref="hello"></span>
+          <span id="shared" @ref="shared"></span>
+          <button id="outer" @click="capture('outer', $hello, $refs.hello)"></button>
+          <div @data="{ inner: true }">
+            <span id="inner-ref" @ref="hello"></span>
+            <button id="inner" @click="capture('inner', $hello, $refs.hello, $shared)"></button>
+          </div>
+        </section>
+      `;
+      await helium({ capture });
+
+      container.querySelector('#outer').click();
+      container.querySelector('#inner').click();
+
+      expect(capture).toHaveBeenNthCalledWith(1, 'outer', container.querySelector('#outer-first'), [
+        container.querySelector('#outer-first'), container.querySelector('#outer-second')
+      ]);
+      expect(capture).toHaveBeenNthCalledWith(2, 'inner', container.querySelector('#inner-ref'), [
+        container.querySelector('#inner-ref')
+      ], container.querySelector('#shared'));
+    });
+
+    it('should promote the next plural ref when the singular ref is removed', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <span id="first" @ref="hello"></span>
+        <span id="second" @ref="hello"></span>
+        <button @click="capture($hello, $refs.hello)"></button>
+      `;
+      await helium({ capture });
+
+      container.querySelector('#first').remove();
+      await new Promise(r => setTimeout(r, 0));
+      container.querySelector('button').click();
+
+      expect(capture).toHaveBeenCalledWith(container.querySelector('#second'), [container.querySelector('#second')]);
+    });
+
+    it('should keep plural refs in current DOM order when elements move', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <span id="first" @ref="hello"></span>
+        <span id="second" @ref="hello"></span>
+        <button @click="capture($hello, $refs.hello)"></button>
+      `;
+      await helium({ capture });
+
+      container.querySelector('button').click();
+      capture.mockClear();
+      container.querySelector('#first').before(container.querySelector('#second'));
+      await new Promise(r => setTimeout(r, 0));
+      container.querySelector('button').click();
+
+      expect(capture).toHaveBeenCalledWith(container.querySelector('#second'), [
+        container.querySelector('#second'), container.querySelector('#first')
+      ]);
+    });
+
+    it('should collect refs rendered by @for in their explicit data scope', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <section @data="{ items: [{ id: 1 }, { id: 2 }] }">
+          <template @for="item in items" :key="item.id">
+            <span class="row" @ref="row" @text="item.id"></span>
+          </template>
+          <button @click="capture($refs.row)"></button>
+        </section>
+      `;
+      await helium({ capture });
+      await new Promise(r => setTimeout(r, 0));
+
+      container.querySelector('button').click();
+
+      expect(capture).toHaveBeenCalledWith([...container.querySelectorAll('.row')]);
+    });
+
     it('should make refs available in @params for AJAX requests', async () => {
       global.fetch = vi.fn().mockResolvedValueOnce({
         headers: { get: () => 'application/json' },
@@ -544,6 +767,30 @@ describe('Helium Reactive Library', () => {
       const [url, options] = global.fetch.mock.calls[0];
       expect(url).toBe('/api/posts');
       expect(options.body).toBeInstanceOf(FormData);
+    });
+
+    it('should resolve HTTP ref targets in the initiating local scope', async () => {
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => 'text/html' },
+        text: async () => 'Scoped response'
+      });
+      container.innerHTML = `
+        <section @data="{ id: 1 }">
+          <div id="first-result" @ref="result"></div>
+        </section>
+        <section @data="{ id: 2 }">
+          <button @get="/scoped" @target="$result"></button>
+          <div id="second-result" @ref="result"></div>
+        </section>
+      `;
+      await helium({});
+
+      container.querySelector('button').click();
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(container.querySelector('#first-result').textContent).toBe('');
+      expect(container.querySelector('#second-result').textContent).toBe('Scoped response');
     });
   });
 
@@ -752,6 +999,31 @@ describe('Helium Reactive Library', () => {
       container.querySelector('button').click();
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('#target').textContent).toBe('Found');
+    });
+
+    it('should expose root, local scope, and scoped query helpers', async () => {
+      const capture = vi.fn();
+      container.innerHTML = `
+        <div class="item root-item"></div>
+        <section id="scope" @data="{ ready: true }">
+          <div class="item scope-item"></div>
+          <button @click="capture($root, $scope, $el, $.all('.item'), $.root.all('.item'), $.scope('.item'), $.scope.all('.item'))"></button>
+        </section>
+      `;
+      await helium({ capture });
+
+      const button = container.querySelector('button');
+      button.click();
+
+      expect(capture).toHaveBeenCalledWith(
+        container,
+        container.querySelector('#scope'),
+        button,
+        [...document.querySelectorAll('.item')],
+        [...container.querySelectorAll('.item')],
+        container.querySelector('.scope-item'),
+        [container.querySelector('.scope-item')]
+      );
     });
 
     it('should provide $html helper to create elements', async () => {
