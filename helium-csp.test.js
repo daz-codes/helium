@@ -784,6 +784,28 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       expect(newEl.textContent).toBe('Dynamic');
     });
 
+    it('should reconcile directives with the CSP expression engine', async () => {
+      container.innerHTML = '<button></button><span></span>';
+      const state = await helium({ count: 0, other: 5 });
+      const button = container.querySelector('button');
+      const span = container.querySelector('span');
+
+      button.setAttribute('data-he-click', 'count++');
+      span.setAttribute('data-he-text', 'count');
+      await new Promise(r => setTimeout(r, 0));
+      button.click();
+      await new Promise(r => setTimeout(r, 0));
+      expect(span.textContent).toBe('1');
+
+      button.setAttribute('data-he-click', 'other++');
+      span.setAttribute('data-he-text', 'other');
+      await new Promise(r => setTimeout(r, 0));
+      button.click();
+      await new Promise(r => setTimeout(r, 0));
+      expect(state.count).toBe(1);
+      expect(span.textContent).toBe('6');
+    });
+
     it('should cleanup listeners when elements are removed', async () => {
       container.innerHTML = '<div id="wrapper"><button @click="count++">Click</button></div>';
       const state = await helium({ count: 0 });

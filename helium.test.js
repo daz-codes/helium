@@ -1272,6 +1272,161 @@ describe('Helium Reactive Library', () => {
       await new Promise(r => setTimeout(r, 100));
       expect(container.querySelector('span').textContent).toBe('Test');
     });
+
+    it('should add, replace, and remove event directives on retained elements', async () => {
+      container.innerHTML = '<button>Run</button>';
+      const state = await helium({ first: 0, second: 0 });
+      const button = container.querySelector('button');
+
+      button.setAttribute('data-he-click', 'first++');
+      await tick();
+      button.click();
+      expect(state.first).toBe(1);
+
+      button.setAttribute('data-he-click', 'second++');
+      await tick();
+      button.click();
+      expect(state.first).toBe(1);
+      expect(state.second).toBe(1);
+
+      button.removeAttribute('data-he-click');
+      await tick();
+      button.click();
+      expect(state.second).toBe(1);
+    });
+
+    it('should reconcile reactive bindings without leaving old dependencies active', async () => {
+      container.innerHTML = '<span></span>';
+      const state = await helium({ first: 'A', second: 'B' });
+      const span = container.querySelector('span');
+
+      span.setAttribute('data-he-text', 'first');
+      await tick();
+      expect(span.textContent).toBe('A');
+
+      span.setAttribute('data-he-text', 'second');
+      await tick();
+      expect(span.textContent).toBe('B');
+      state.first = 'stale';
+      await tick();
+      expect(span.textContent).toBe('B');
+
+      span.removeAttribute('data-he-text');
+      await tick();
+      state.second = 'also stale';
+      await tick();
+      expect(span.textContent).toBe('B');
+    });
+
+    it('should reconcile bind, ref, and init lifecycle directives independently', async () => {
+      const started = vi.fn();
+      const cleaned = vi.fn();
+      container.innerHTML = '<input><button @click="seen = $refs.field.length"></button>';
+      const state = await helium({ name: 'Ada', seen: -1, setup: () => (started(), () => cleaned()) });
+      const input = container.querySelector('input');
+      const button = container.querySelector('button');
+
+      input.setAttribute('data-he-bind', 'name');
+      input.setAttribute('data-he-ref', 'field');
+      input.setAttribute('data-he-init', 'setup()');
+      await tick();
+      expect(input.value).toBe('Ada');
+      expect(started).toHaveBeenCalledTimes(1);
+      button.click();
+      expect(state.seen).toBe(1);
+
+      input.value = 'Grace';
+      input.dispatchEvent(new Event('input'));
+      expect(state.name).toBe('Grace');
+
+      input.removeAttribute('data-he-bind');
+      input.removeAttribute('data-he-ref');
+      input.removeAttribute('data-he-init');
+      await tick();
+      expect(cleaned).toHaveBeenCalledTimes(1);
+      input.value = 'Ignored';
+      input.dispatchEvent(new Event('input'));
+      expect(state.name).toBe('Grace');
+      button.click();
+      expect(state.seen).toBe(0);
+    });
+
+    it('should replace local @data and re-track descendant bindings', async () => {
+      container.innerHTML = '<section data-he-data="{ label: \'one\' }"><span @text="label"></span></section>';
+      await helium({ label: 'root' });
+      const section = container.querySelector('section');
+      const span = container.querySelector('span');
+      expect(span.textContent).toBe('one');
+
+      section.setAttribute('data-he-data', "{ label: 'two' }");
+      await tick();
+      expect(span.textContent).toBe('two');
+
+      section.removeAttribute('data-he-data');
+      await tick();
+      expect(span.textContent).toBe('root');
+    });
+
+    it('should restore initial root state when dynamic root data is removed', async () => {
+      container.setAttribute('data-he-data', '{ count: 1, temporary: true }');
+      container.innerHTML = '<span @text="count"></span>';
+      const state = await helium({ count: 9 });
+      expect(state.count).toBe(1);
+      expect(state.temporary).toBe(true);
+
+      container.setAttribute('data-he-data', '{ count: 2 }');
+      await tick();
+      expect(state.count).toBe(2);
+      expect(state.temporary).toBeUndefined();
+      expect(container.querySelector('span').textContent).toBe('2');
+
+      container.removeAttribute('data-he-data');
+      await tick();
+      expect(state.count).toBe(9);
+      expect(container.querySelector('span').textContent).toBe('9');
+    });
+
+    it('should tear down and replace structural directives when their expressions change', async () => {
+      const cleaned = vi.fn();
+      container.innerHTML = '<template data-he-if="first"><i @init="setup()" @text="message"></i></template>';
+      const state = await helium({ first: true, second: false, message: 'shown', setup: () => () => cleaned() });
+      await tick();
+      const template = container.querySelector('template');
+      expect(container.querySelector('i').textContent).toBe('shown');
+
+      template.setAttribute('data-he-if', 'second');
+      await tick();
+      expect(container.querySelector('i')).toBeNull();
+      expect(cleaned).toHaveBeenCalledTimes(1);
+
+      state.second = true;
+      await tick();
+      expect(container.querySelector('i').textContent).toBe('shown');
+      template.removeAttribute('data-he-if');
+      await tick();
+      expect(container.querySelector('i')).toBeNull();
+      expect(cleaned).toHaveBeenCalledTimes(2);
+    });
+
+    it('should replace keyed list sources without retaining old rows', async () => {
+      container.innerHTML = `
+        <template data-he-for="item in first" :key="item.id">
+          <b :data-id="item.id" @text="item.name"></b>
+        </template>
+      `;
+      await helium({
+        first: [{ id: 'a', name: 'Alpha' }],
+        second: [{ id: 'b', name: 'Beta' }]
+      });
+      await tick();
+      const template = container.querySelector('template');
+      expect(container.querySelector('b').textContent).toBe('Alpha');
+
+      template.setAttribute('data-he-for', 'item in second');
+      await tick();
+      expect([...container.querySelectorAll('b')].map(el => el.textContent)).toEqual(['Beta']);
+      expect(container.querySelector('[data-id="a"]')).toBeNull();
+    });
   });
 
   describe('Edge Cases', () => {

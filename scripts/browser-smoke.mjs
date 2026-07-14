@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "@playwright/test";
+import { chromium, firefox, webkit } from "@playwright/test";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const mimeTypes = new Map([
@@ -120,6 +120,7 @@ async function testStandard(baseUrl, browser) {
         <div id="self-listener" @mousedown.self="selfCount++"><i id="self-child"></i></div>
         <div id="capture-parent" @click.capture="order.push('capture')"><button id="capture-child" @click.passive="order.push('target')"></button></div>
         <button id="throttle" @click.throttle:40="throttled++"></button>
+        <button id="dynamic"></button><span id="dynamic-output"></span>
         <section id="local-scope" @data="{ count: 10 }">
           <i id="ref-one" class="ref-item" @ref="thing"></i>
           <i id="ref-two" class="ref-item" @ref="thing"></i>
@@ -139,6 +140,8 @@ async function testStandard(baseUrl, browser) {
       order: [],
       throttled: 0,
       items: [{ id: 1, name: "One" }, { id: 2, name: "Two" }],
+      dynamicCount: 0,
+      dynamicOther: 10,
     });
 
     await page.locator("#local").click();
@@ -171,6 +174,29 @@ async function testStandard(baseUrl, browser) {
     await page.waitForTimeout(60);
     assert(await page.evaluate(() => window.__heliumState.throttled) === 2,
       "standard bundle throttle did not invoke one trailing event");
+
+    await page.evaluate(() => {
+      document.querySelector("#dynamic").setAttribute("data-he-click", "dynamicCount++");
+      document.querySelector("#dynamic-output").setAttribute("data-he-text", "dynamicCount");
+    });
+    await tick(page);
+    await page.locator("#dynamic").click();
+    await expectText(page, "#dynamic-output", "1");
+    await page.evaluate(() => {
+      document.querySelector("#dynamic").setAttribute("data-he-click", "dynamicOther++");
+      document.querySelector("#dynamic-output").setAttribute("data-he-text", "dynamicOther");
+    });
+    await expectText(page, "#dynamic-output", "10");
+    await page.locator("#dynamic").click();
+    await expectText(page, "#dynamic-output", "11");
+    await page.evaluate(() => {
+      document.querySelector("#dynamic").removeAttribute("data-he-click");
+      document.querySelector("#dynamic-output").removeAttribute("data-he-text");
+    });
+    await tick(page);
+    await page.locator("#dynamic").click();
+    assert(await page.evaluate(() => window.__heliumState.dynamicOther) === 11,
+      "standard bundle retained a removed event directive");
 
     await page.locator("#window-listener").evaluate(element => element.remove());
     await tick(page);
@@ -335,19 +361,25 @@ async function expectText(page, selector, expected) {
 
 const port = await listen(server);
 const baseUrl = `http://127.0.0.1:${port}`;
-let browser;
+const browserTypes = { chromium, firefox, webkit };
 
 try {
-  browser = await chromium.launch();
-  await testStandard(baseUrl, browser);
-  await testLite(baseUrl, browser);
-  await testCsp(baseUrl, browser);
-  await testLateImport(baseUrl, browser);
-  await testSse(baseUrl, browser);
-  await testTurbo(baseUrl, browser);
-  await testBrowserEntryImports(baseUrl, browser);
-  console.log("All browser smoke tests passed.");
+  for (const [name, browserType] of Object.entries(browserTypes)) {
+    const browser = await browserType.launch();
+    try {
+      await testStandard(baseUrl, browser);
+      await testLite(baseUrl, browser);
+      await testCsp(baseUrl, browser);
+      await testLateImport(baseUrl, browser);
+      await testSse(baseUrl, browser);
+      await testTurbo(baseUrl, browser);
+      await testBrowserEntryImports(baseUrl, browser);
+      console.log(`${name} browser smoke tests passed.`);
+    } finally {
+      await browser.close();
+    }
+  }
+  console.log("All cross-browser smoke tests passed.");
 } finally {
-  await browser?.close();
   await closeServer(server);
 }

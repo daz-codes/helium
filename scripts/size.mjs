@@ -6,15 +6,15 @@ import { constants, brotliCompressSync, gzipSync } from "node:zlib";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
 
-// RC.3 scope/event ceilings. They retain a small margin over the measured
-// production bundles so later regressions fail without making normal minifier
-// variation look like a release blocker.
+// Dynamic-directive lifecycle ceilings. They retain a small margin over the
+// measured production bundles so later regressions fail without making normal
+// minifier variation look like a release blocker.
 const budgets = {
-  "helium.min.js": 8900,
-  "helium-lite.min.js": 5600,
-  "helium-sse.min.js": 9300,
-  "helium-csp.min.js": 13000,
-  "helium-csp-sse.min.js": 13400,
+  "helium.min.js": 9750,
+  "helium-lite.min.js": 6300,
+  "helium-sse.min.js": 10150,
+  "helium-csp.min.js": 13900,
+  "helium-csp-sse.min.js": 14275,
 };
 
 const rows = [];

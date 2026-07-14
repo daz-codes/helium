@@ -61,6 +61,36 @@ describe('Helium Lite', () => {
       expect(container.querySelector('div').textContent).toBe('World');
     });
 
+    it('should reconcile data-he-* directives on retained elements', async () => {
+      container.innerHTML = '<button></button><span></span>';
+      const state = await helium({ count: 0, other: 10 });
+      const button = container.querySelector('button');
+      const span = container.querySelector('span');
+
+      button.setAttribute('data-he-click', 'count++');
+      span.setAttribute('data-he-text', 'count');
+      await tick();
+      button.click();
+      await tick();
+      expect(span.textContent).toBe('1');
+
+      button.setAttribute('data-he-click', 'other++');
+      span.setAttribute('data-he-text', 'other');
+      await tick();
+      button.click();
+      await tick();
+      expect(state.count).toBe(1);
+      expect(span.textContent).toBe('11');
+
+      button.removeAttribute('data-he-click');
+      span.removeAttribute('data-he-text');
+      await tick();
+      button.click();
+      state.other = 12;
+      await tick();
+      expect(span.textContent).toBe('11');
+    });
+
     it('should ignore stale state mutations after re-initialization', async () => {
       container.innerHTML = '<div @text="count"></div>';
       const first = await helium({ count: 1 });

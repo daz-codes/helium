@@ -18,7 +18,7 @@ It's really simple to use - just sprinkle the magic @attributes into your HTML a
 
 Helium is designed for developers who want:
 
-- **Lightweight** - About 5.5–13.3KB minified and gzipped, depending on the build
+- **Lightweight** - About 6.2–14.2KB minified and gzipped, depending on the build
 - **Powerful** - Declarative JavaScript in your HTML
 - **Zero build step** - Works directly in the browser with no compiling
 - **Easy to learn** - If you know HTML and basic JavaScript, you're ready
@@ -113,11 +113,11 @@ import helium from "@daz4126/helium/csp"
 | SSE | Add-on | ❌ | Add-on |
 | Turbo integration | ✅ | ❌ | ✅ |
 | CSP safe | ❌ | ❌ | ✅ |
-| Approx. min+gzip size | 8.79KB | 5.52KB | 12.89KB |
+| Approx. min+gzip size | 9.62KB | 6.18KB | 13.75KB |
 
 Sizes are enforced against the production Terser builds with gzip level 9. The
-CSP figure includes its expression parser. Adding SSE produces 9.17KB Standard
-and 13.27KB CSP bundles.
+CSP figure includes its expression parser. Adding SSE produces 10.00KB Standard
+and 14.12KB CSP bundles.
 
 Lite is generated from the same global-state reactive core as Standard. It has
 identical deep/shared reactivity, lifecycle, binding, and cleanup behavior for
@@ -1091,7 +1091,7 @@ The event object (available in event handlers):
 ```html
 <div @click="console.log($event.timeStamp)">Log the timestamp</div>
 <input @keydown="$event.key === 'Enter' && submit()">
-<form @submit="$event.preventDefault(); handleSubmit()">
+<form @submit.prevent="handleSubmit()">
 ```
 
 ### $dispatch
@@ -1156,6 +1156,36 @@ scope, in current DOM order:
 <div @ref="item"></div>
 <button @click="console.log($refs.item.length)">Log item count</button>
 ```
+
+## Expression Contract
+
+Directive values are **single expressions**, in both Standard and CSP. Common
+expressions include property reads, assignments, function calls, object and
+array literals, ternaries, logical operators, and arrow functions:
+
+```html
+<button @click="open = !open">Toggle</button>
+<button @click="save($data, $el)">Save</button>
+<p @text="loading ? 'Loading…' : message"></p>
+```
+
+Top-level statement lists, declarations, and control-flow statements are not
+directive syntax. Prefer event modifiers and move multi-step behavior into a
+named function:
+
+```html
+<!-- Not supported: two top-level statements -->
+<form @submit="$event.preventDefault(); save()"></form>
+
+<!-- Preferred -->
+<form @submit.prevent="save($data)"></form>
+```
+
+The Standard build uses the JavaScript expression grammar. The CSP build uses
+its restricted expression parser and additionally excludes `new` and some
+JavaScript expression forms; see the CSP build notes above. Functions declared inside
+an `@data` object or imported from a module are ordinary JavaScript functions
+and may contain statements internally.
 
 ## Functions
 
@@ -1318,7 +1348,28 @@ Without keys, the entire list is re-rendered. With keys, only changed items are 
 
 ### MutationObserver
 
-Helium automatically observes the DOM and processes new elements as they're added. This means Helium works seamlessly with:
+Helium automatically observes the DOM, processes new elements as they're added,
+and reconciles Helium directives when attributes on retained elements change.
+Adding, replacing, or removing an event, binding, ref, effect, initializer, or
+structural directive installs the new behavior and tears down the old behavior
+without rebuilding unrelated parts of the subtree.
+
+For programmatic changes, use the `data-he-*` aliases: DOM `setAttribute()`
+rejects names such as `@click` in some browsers and DOM implementations even
+though the HTML parser accepts them.
+
+```js
+button.setAttribute("data-he-click", "save()")
+button.setAttribute("data-he-click", "archive()") // replaces save
+button.removeAttribute("data-he-click")            // removes the listener
+```
+
+Changing local `data-he-data` recreates that local scope and re-tracks its
+descendant bindings. HTTP option attributes such as `data-he-target` are read
+when the request runs, so their current values are used automatically. Root
+selection and `@local-storage` remain mount-time configuration.
+
+This means Helium works seamlessly with:
 
 - Dynamically inserted content
 - Content loaded via AJAX
@@ -1580,32 +1631,101 @@ intentionally absent (or still on the roadmap). Current gaps:
 - **No transition helper** — use CSS transitions/classes directly with
   `@hidden`, `@visible`, or `@if`.
 
-### Roadmap
+### Stimulus-parity roadmap
 
-Ordered by recommended implementation sequence:
+The goal is not to copy Stimulus's controller syntax. Simple behavior should
+remain local (`@click="open = !open"`, `@bind="name"`); the roadmap supplies the
+lifecycle and JavaScript escape hatches needed when behavior becomes complex.
 
-1. **Document function and `this` context limitations** alongside the existing
-   magic-variable guidance, with correct patterns for passing `$data`, `$el`,
-   and other context explicitly.
-2. **Add opt-in required-CSRF validation for POST/PUT/PATCH** — fail before the
-   request when an application declares that a token is mandatory, without
-   breaking tokenless APIs and cross-origin requests.
-3. **Add request cancellation and explicit success/error hooks** using
-   `AbortController`; define the request lifecycle before expanding loading and
-   error-state APIs.
-4. **Document a form-validation pattern first**, using native constraint
-   validation and Helium state; add helpers only if examples reveal recurring
-   boilerplate.
-5. **Create a complete error-state example** covering validation, HTTP failure,
-   retry, accessible messaging, and clearing stale errors.
-6. **Complete HTTP loading-state lifecycle behavior** — `@loading` already
-   exists, so define consistent success, error, cancellation, and restoration
-   behavior rather than adding a second loading mechanism.
-7. **Add debounced two-way binding updates if needed** after reproducing a real
-    feedback/caret loop; event-handler debouncing already covers ordinary input
-    throttling.
-8. **Add a minimal watch/middleware system** together with a clear size budget;
-    avoid adopting Alpine-scale surface area without demonstrated use cases.
+#### P0 — 1.0 release foundations
+
+- [x] **Define the expression and function-context contract.** Directive values
+  are expressions; multi-step work belongs in named functions with `$data`,
+  `$el`, refs, and other required context passed explicitly.
+- [x] **Reconcile directive attributes on retained elements.** Attribute add,
+  replace, and removal now install and tear down bindings, events, refs,
+  initializers, local data, and structural directives independently.
+- [x] **Run the production browser suite in Chromium, Firefox, and WebKit.** Keep
+  the same CSP, Turbo, SSE, keyed identity, dynamic-directive, late-import,
+  Lite, and entry-point checks in every engine.
+
+#### P1 — complex-behavior escape hatches
+
+1. **Formalize lifecycle modules over `@init`.** Document the existing
+   `@import` + `@init` setup-function convention: imported setup receives its
+   required element, state, refs, and dispatch context explicitly and returns
+   cleanup. Keep ordinary behavior inline and move only complex imperative work
+   into a lifecycle module.
+
+   ```js
+   export function connectFeature(element, data, refs) {
+     // setup
+     return () => {
+       // cleanup
+     }
+   }
+   ```
+
+2. **Formally support and test namespaced initializers.** Allow independent
+   behaviors such as `@init:editor` and `@init:tooltip` on one element, with
+   isolated replacement and cleanup when either attribute changes.
+
+   ```html
+   <div
+     @init:editor="connectEditor($el, $data, $refs)"
+     @init:tooltip="connectTooltip($el)"
+   ></div>
+   ```
+
+3. **Add unified lifecycle error handling.** Route initializer setup, async
+   rejection, cleanup, binding, event, import, and request failures through an
+   instance-level `handleError(error, context)` hook and optional debug mode.
+4. **Add an initializer-scoped `AbortSignal`.** Give each initializer a signal
+   that aborts when its attribute is replaced, removed, its element disconnects,
+   or its Helium root unmounts, so listeners and pending external work can use
+   native cancellation.
+5. **Support asynchronous setup and cleanup safely.** Recognize setup promises,
+   avoid registering stale results after disconnection or replacement, run a
+   cleanup returned asynchronously, and report rejected setup/cleanup through
+   the lifecycle error hook.
+6. **Add programmatic `watch()`.** Let imported setup functions observe reactive
+   state without exporting update functions or storing external instances in a
+   module-level `WeakMap`; include current/previous values and lifecycle-bound
+   cleanup. Keep middleware separate and lower priority.
+7. **Publish TypeScript declarations** for mounting, factories, expression
+   engines, CSP globals, SSE, lifecycle errors, initializer context, signals,
+   and watching.
+
+#### P2 — lifecycle depth and application maturity
+
+8. **Observe ref collections** so complex behaviors can react when matching
+   refs connect, disconnect, or reorder; this covers Stimulus target callbacks
+   without changing simple `$ref`/`$refs` usage.
+9. **Complete the HTTP lifecycle:** request cancellation with `AbortController`,
+   explicit success/error hooks, consistent `@loading` restoration, and opt-in
+   required-CSRF validation for state-changing same-origin requests.
+10. **Evaluate behavior lookup only after lifecycle modules are established.**
+    Prefer `$dispatch` for loose coordination; add outlet-like instance lookup
+    only if real applications require direct behavior-to-behavior calls.
+
+#### P3 — evidence-driven conveniences
+
+11. **Document complete validation and error-state patterns** covering native
+   constraint validation, HTTP failure, retry, accessible messages, and stale
+   error clearing before adding validation helpers.
+12. **Consider extensible event modifiers and structured action parameters.**
+   Expressions already cover most cases, so add APIs only for repeated needs.
+13. **Revisit `@use`, debounced binding, middleware, transitions, and a shared
+    store** only with concrete use cases and explicit size budgets. Event
+    debouncing, CSS transitions, custom events, and independent roots cover the
+    common forms today. Add `@use` only if lifecycle modules reveal a need for
+    behavior registration, private instances, or package interoperability
+    beyond namespaced `@init`.
+
+This ordering moves the former HTTP/form-heavy roadmap behind lifecycle,
+diagnostics, watching, and types. The HTTP, CSRF, loading, validation, and error
+example work remains planned, but it does not by itself close the most important
+Stimulus-parity gaps.
 
 ## Contributing
 
@@ -1617,7 +1737,7 @@ Helium is open source! Contributions, issues, and feature requests are welcome.
 
 Before submitting a change, run `npm run check`. It executes the full jsdom test
 suite, creates the production bundles, smoke-tests them, and fails if any gzip
-size budget is exceeded. `npm run test:browser` runs the Chromium smoke suite
+size budget is exceeded. `npm run test:browser` runs the cross-browser smoke suite
 used by CI for CSP, Turbo, SSE, keyed focus preservation, late imports, Lite
 generation, and browser entry imports. `npm run check:ci` runs both paths.
 `npm run size` also reports raw, gzip, and Brotli sizes.

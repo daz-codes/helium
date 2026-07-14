@@ -8,6 +8,8 @@ HTML through attributes and runs directly in the browser without compilation.
 - Use `@directive` or its `data-he-directive` alias.
 - Define initial state with `@data` / `data-he-data`, or pass it to `helium({...})`.
 - Use `@text` for plain text and `@html` only for trusted or sanitized HTML.
+- Directive values are single expressions, not top-level statement lists. Use
+  modifiers such as `@submit.prevent` and move multi-step work into a function.
 - In Standard/CSP, root `@data` initializes mounted root state and nested
   `@data` creates element-local state. Lite always uses root state.
 
@@ -33,6 +35,15 @@ app.unmount()
 Each explicit mount owns its state, bindings, listeners, observer, refs, and
 cleanup. `unmount()` is idempotent. There is currently no shared store between
 mounted roots.
+
+Helium also reconciles directives added, replaced, or removed on retained
+elements. For programmatic attribute changes, use `data-he-*` names because
+DOM `setAttribute()` may reject `@` names:
+
+```javascript
+button.setAttribute("data-he-click", "save()")
+button.removeAttribute("data-he-click")
+```
 
 ## Directives
 

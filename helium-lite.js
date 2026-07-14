@@ -9,6 +9,13 @@ const INPUT_EVENTS = { form: "submit", input: "input", textarea:"input", select:
 const KEY_MODS = { shift: "shiftKey", ctrl: "ctrlKey", alt: "altKey", meta: "metaKey" };
 // Modifiers that are flags rather than key names; used to find the key mod regardless of order
 const FLAG_MODS = new Set(["prevent", "once", "outside", "document", "window", "self", "capture", "passive", "stop"]);
+const HTTP_OPTION_ATTRS = new Set([
+  "@target", "@params", "@template", "@loading", "@options",
+  "data-he-target", "data-he-params", "data-he-template", "data-he-loading", "data-he-options"
+]);
+const HELIUM_CONFIG_ATTRS = new Set([
+  "@helium", "data-helium", "@local-storage", "data-he-local-storage"
+]);
 const isKeyMod = m => !FLAG_MODS.has(m) && !m.startsWith("debounce") && !m.startsWith("throttle") && !KEY_MODS[m];
 const STATE_FIRST_GLOBALS = new Set(["name", "length", "status", "top", "origin", "event", "closed", "parent"]);
 const getEvent = el => INPUT_EVENTS[el.tagName.toLowerCase()] || "click";
@@ -256,6 +263,15 @@ function createHelium(configuredRoot) {
         enqueueBindings(keys);
         saveState?.();
         return res
+      },
+      deleteProperty: (t, p) => {
+        if (!Reflect.has(t, p)) return true;
+        const res = Reflect.deleteProperty(t, p);
+        if (res && isCurrent()) {
+          enqueueBindings([p]);
+          saveState?.();
+        }
+        return res;
       }
   };
 
@@ -499,8 +515,8 @@ function createHelium(configuredRoot) {
       removed.forEach(e => {
         const initCleanups = HELIUM.cleanups.get(e);
         HELIUM.cleanups.delete(e);
-        initCleanups?.forEach(initCleanup => {
-          try { initCleanup(); }
+        initCleanups?.forEach(record => {
+          try { record.cleanup(); }
           catch (error) { console.error("Helium cleanup:", error); }
         });
         HELIUM.listeners.get(e)?.forEach(({receiver,event,handler,options}) => {
@@ -524,18 +540,100 @@ function createHelium(configuredRoot) {
       });
     };
 
-  const runInits = inits => inits.forEach(({ compiled, el }) => {
+  const runInits = inits => inits.forEach(({ compiled, el, attr }) => {
     let result;
     try { result = compiled.execute(createScope(el)); }
     catch (err) { return void console.error("Helium @init error:", err.message); }
     if (typeof result === "function") {
-      HELIUM.cleanups.set(el, [...(HELIUM.cleanups.get(el) || []), result]);
+      HELIUM.cleanups.set(el, [...(HELIUM.cleanups.get(el) || []), { cleanup: result, attr }]);
     }
   });
 
   HELIUM.cleanup = cleanup;
 
-  async function processElements(element) {
+  const bindingsFor = predicate => {
+    const found = new Set();
+    HELIUM.bindings.forEach(bindings => bindings.forEach(binding => {
+      if (predicate(binding)) found.add(binding);
+    }));
+    return found;
+  };
+
+  const forgetBinding = binding => {
+    if (binding.loop) {
+      const nodes = [...binding.loop[4].values()].flatMap(row => row.nodes);
+      cleanup(nodes.filter(node => node.nodeType === 1));
+      nodes.forEach(node => node.remove());
+      binding.loop[4].clear();
+    }
+    if (binding.cond?.[1].length) {
+      const nodes = binding.cond[1];
+      cleanup(nodes.filter(node => node.nodeType === 1));
+      nodes.forEach(node => node.remove());
+      binding.cond[1] = [];
+    }
+    HELIUM.bindings.forEach((bindings, key) => {
+      const kept = bindings.filter(candidate => candidate !== binding);
+      kept.length ? HELIUM.bindings.set(key, kept) : HELIUM.bindings.delete(key);
+    });
+  };
+
+  const removeDirective = (el, attr, oldValue) => {
+    bindingsFor(binding => binding.el === el && binding.attr === attr).forEach(forgetBinding);
+
+    const listeners = HELIUM.listeners.get(el) || [];
+    const keptListeners = [];
+    listeners.forEach(record => {
+      if (record.attr !== attr) return void keptListeners.push(record);
+      record.handler.cancel?.();
+      record.receiver.removeEventListener(record.event, record.handler, record.options);
+    });
+    keptListeners.length ? HELIUM.listeners.set(el, keptListeners) : HELIUM.listeners.delete(el);
+
+    const initCleanups = HELIUM.cleanups.get(el) || [];
+    const keptCleanups = [];
+    initCleanups.forEach(record => {
+      if (record.attr !== attr) return void keptCleanups.push(record);
+      try { record.cleanup(); }
+      catch (error) { console.error("Helium cleanup:", error); }
+    });
+    keptCleanups.length ? HELIUM.cleanups.set(el, keptCleanups) : HELIUM.cleanups.delete(el);
+
+    if (match(attr, "ref") && oldValue != null) {
+      const key = "$" + oldValue;
+      const refs = HELIUM.refs.get(key);
+      if (refs?.delete(el)) refsRevision++;
+      if (refs && !refs.size) HELIUM.refs.delete(key);
+    }
+
+  };
+
+  const refreshSubtreeBindings = el => {
+    bindingsFor(binding => binding.el !== el && el.contains(binding.el)).forEach(safeApplyBinding);
+    refsRevision++;
+  };
+
+  const reconcileDirective = async (el, attr, oldValue) => {
+    if (!isCurrent() || (el !== root && !root.contains(el))) return;
+    if (HTTP_OPTION_ATTRS.has(attr) || HELIUM_CONFIG_ATTRS.has(attr)) return;
+
+    let directive = attr;
+    if (attr === ":key") {
+      directive = el.hasAttribute("@for") ? "@for"
+        : el.hasAttribute("data-he-for") ? "data-he-for" : null;
+      if (!directive) return;
+    }
+
+    removeDirective(el, directive, attr === ":key" ? el.getAttribute(directive) : oldValue);
+    if (el.hasAttribute(directive)) {
+      const { bindings, inits } = await processElements(el, new Set([directive]));
+      if (!isCurrent() || (el !== root && !root.contains(el))) return;
+      bindings.forEach(safeApplyBinding);
+      runInits(inits);
+    }
+  };
+
+  async function processElements(element, onlyAttributes = null) {
       const newBindings = [];
       const deferredBindings = [];
       const newInits = [];
@@ -544,6 +642,7 @@ function createHelium(configuredRoot) {
       // insert many sibling rows at once — one pass beats one call per row).
       const roots = Array.isArray(element) ? element : [element];
       const heElements = roots.flatMap(el => [el, ...el.querySelectorAll("*")]).filter(e => {
+        if (onlyAttributes) return roots.includes(e);
         if (HELIUM.processed.has(e)) return false;
         for (let i = 0; i < e.attributes.length; i++) {
           const n = e.attributes[i].name;
@@ -570,6 +669,7 @@ function createHelium(configuredRoot) {
 
           // Skip non-helium attributes early
           if (name[0] !== '@' && name[0] !== ':' && !name.startsWith('data-he')) continue;
+          if (onlyAttributes && !onlyAttributes.has(name)) continue;
 
           // Initialize state first if needed (skip reserved words, only if not already set)
           let hasLocalValue = false;
@@ -583,12 +683,13 @@ function createHelium(configuredRoot) {
           if (match(name, "data") || name === 'data-he') {
             Object.assign(state, evalExpr(value));
           }
+          else if (match(name, "import") || HELIUM_CONFIG_ATTRS.has(name)) continue;
           // Lite ignores the structural directives it doesn't implement rather
           // than registering them as event listeners.
           else if (match(name, "for", "if")) continue;
           else if (name.startsWith(":") || name.startsWith('data-he-attr:')) {
             const propName = name.startsWith(":") ? name.slice(1) : name.slice(13);
-            deferredBindings.push({el, prop: propName, compiled: compile(value, true, { label: name })});
+            deferredBindings.push({el, attr: name, prop: propName, compiled: compile(value, true, { label: name })});
           }
           else if (match(name, "ref")) {
             const key = "$" + value;
@@ -599,7 +700,7 @@ function createHelium(configuredRoot) {
             }
           }
           else if (match(name, "text", "html")) {
-            deferredBindings.push({el, prop: match(name, "text") ? "textContent" : "innerHTML", compiled: compile(value, true, { label: name })});
+            deferredBindings.push({el, attr: name, prop: match(name, "text") ? "textContent" : "innerHTML", compiled: compile(value, true, { label: name })});
           }
           else if (match(name, "bind")) {
             const event = (isCheckbox || isRadio || isSelect || name.includes(".lazy")) ? "change" : "input";
@@ -609,28 +710,29 @@ function createHelium(configuredRoot) {
             const inputHandler = e => setStateValue(el, value, isCheckbox ? e.target.checked : toBound(e.target.value));
             el.addEventListener(event, inputHandler);
             if (!HELIUM.listeners.has(el)) HELIUM.listeners.set(el, []);
-            HELIUM.listeners.get(el).push({receiver: el, event, handler: inputHandler});
-            deferredBindings.push({el, prop, compiled: compile(value, true, { label: name })});
+            HELIUM.listeners.get(el).push({receiver: el, event, handler: inputHandler, attr: name});
+            deferredBindings.push({el, attr: name, prop, compiled: compile(value, true, { label: name })});
             if (isCheckbox) el.checked = !!state[value];
             else if (isRadio) el.checked = el.value == state[value];
             else el.value = state[value] ?? "";
           }
           else if (match(name, "hidden", "visible")) {
             const isHidden = match(name, "hidden");
-            deferredBindings.push({el, prop: "hidden", compiled: compile(value, true, { label: name, strict: true }), isHiddenAttr: isHidden});
+            deferredBindings.push({el, attr: name, prop: "hidden", compiled: compile(value, true, { label: name, strict: true }), isHiddenAttr: isHidden});
           }
           else if (match(name, "calculate")) {
             const calcName = name.split(":")[1];
             let calcOwner = null;
             if (!calcOwner && !(calcName in state)) state[calcName] = undefined;  // Initialize so other bindings can reference it
-            deferredBindings.push({el, calc: calcName, prop: null, compiled: compile(value, true, { label: name, strict: true })});
+            deferredBindings.push({el, attr: name, calc: calcName, prop: null, compiled: compile(value, true, { label: name, strict: true })});
           }
           else if (match(name, "effect")) {
-            deferredBindings.push({el, prop: null, compiled: compile(value, true, { label: name, strict: true }), keys: name.split(":").slice(1)});
+            deferredBindings.push({el, attr: name, prop: null, compiled: compile(value, true, { label: name, strict: true }), keys: name.split(":").slice(1)});
           }
           else if (match(name, "init")) {
-            newInits.push({ compiled: compile(value, true, { label: name, strict: true }), el });
+            newInits.push({ compiled: compile(value, true, { label: name, strict: true }), el, attr: name });
           }
+          else if (HTTP_OPTION_ATTRS.has(name)) continue;
           else if (name.startsWith("@") || name.startsWith('data-he')) {
             const fullName = name.startsWith("@") ? name.slice(1) : name.slice(8);
             const [eventName, ...mods] = fullName.split(".");
@@ -686,7 +788,7 @@ function createHelium(configuredRoot) {
             handler.cancel = scheduled.cancel;
             receiver.addEventListener(event, handler, eventOptions);
             if (!HELIUM.listeners.has(el)) HELIUM.listeners.set(el, []);
-            HELIUM.listeners.get(el).push({receiver, event, handler, options: eventOptions});
+            HELIUM.listeners.get(el).push({receiver, event, handler, options: eventOptions, attr: name});
           }
         }
       });
@@ -707,8 +809,10 @@ function createHelium(configuredRoot) {
       if (HELIUM.refs.size) refsRevision++;
       // One batched cleanup for everything detached in this mutation batch.
       const detached = [];
+      const addedRoots = [];
       for (const m of ms) {
         m.removedNodes.forEach((n) => n.nodeType === 1 && !root.contains(n) && detached.push(n));
+        m.addedNodes.forEach((n) => n.nodeType === 1 && root.contains(n) && addedRoots.push(n));
       }
       cleanup(detached);
       for (const m of ms) {
@@ -721,8 +825,21 @@ function createHelium(configuredRoot) {
           }
         }
       }
+      const attributeChanges = new Map();
+      for (const m of ms) {
+        if (m.type !== "attributes") continue;
+        const el = m.target, attr = m.attributeName;
+        if (addedRoots.some(added => added === el || added.contains(el))) continue;
+        if (attr[0] !== "@" && attr[0] !== ":" && !attr.startsWith("data-he")) continue;
+        let changes = attributeChanges.get(el);
+        if (!changes) attributeChanges.set(el, changes = new Map());
+        if (!changes.has(attr)) changes.set(attr, m.oldValue);
+      }
+      for (const [el, changes] of attributeChanges) {
+        for (const [attr, oldValue] of changes) await reconcileDirective(el, attr, oldValue);
+      }
     });
-    HELIUM.observer.observe(root, { childList: true, subtree: true });
+    HELIUM.observer.observe(root, { childList: true, subtree: true, attributes: true, attributeOldValue: true });
 
     // Read localStorage before processElements (which sets @data defaults and triggers saves via proxy)
     const savedState = storageKey ? (() => { try { return JSON.parse(localStorage.getItem(storageKey)); } catch { return null; } })() : null;
