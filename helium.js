@@ -190,12 +190,18 @@ export function createHelium(options = {}) {
   };
 
   async function helium(initialState = {}) {
-    const currentGeneration = ++generation;
-    const isCurrent = () => currentGeneration === generation;
-    const ALL = Symbol("all");
     const root = (typeof configuredRoot === "string" ? document.querySelector(configuredRoot) : configuredRoot)
       || document.querySelector('[\\@helium]') || document.querySelector('[data-helium]') || document.body;
     if (!root) throw Error("No root");
+    // @standard-start
+    // One element has one owner. Checked before anything changes, so a
+    // rejected mount leaves the running instance untouched.
+    if ([...LIVE].some(other => other.owner !== helium && other.root === root)
+      || GENERATED.has(root.closest("[data-helium-generated]"))) throw Error("Helium root already owned");
+    // @standard-end
+    const currentGeneration = ++generation;
+    const isCurrent = () => currentGeneration === generation;
+    const ALL = Symbol("all");
     const storageKey = root.getAttribute('@local-storage') || root.getAttribute('data-he-local-storage');
 
     // On re-init (manual re-call or Turbo navigation) tear down the previous
@@ -232,6 +238,16 @@ export function createHelium(options = {}) {
     // @standard-start
     const instanceRecord = HELIUM;
     LIVE.add(instanceRecord);
+    // A root mounted inside a running root takes its subtree over.
+    LIVE.forEach(other => other !== instanceRecord && other.root.contains(root) && other.release(root));
+    // Ownership is read live, never captured: another root can mount inside
+    // this one while this instance is waiting on imports or a microtask.
+    const owned = el => {
+      for (const other of LIVE) {
+        if (other !== instanceRecord && other.root !== root && root.contains(other.root) && other.root.contains(el)) return false;
+      }
+      return true;
+    };
     // @standard-end
 
     const elementRecord = el => {
@@ -561,7 +577,7 @@ export function createHelium(options = {}) {
     let refsRevision = 0;
 
     const safeApplyBinding = (b) => {
-      if ((b.el !== root && !root.contains(b.el)) || applyingBindings.has(b)) return;
+      if (b.gone || (b.el !== root && !root.contains(b.el)) || applyingBindings.has(b)) return;
       applyingBindings.add(b);
       try {
         // @standard-start
@@ -653,42 +669,43 @@ export function createHelium(options = {}) {
         // that assigns an unchanged value stops re-enqueueing itself.
         const changed = !Object.is(Reflect.get(t,p), v);
         const res = Reflect.set(t,p,v);
-        if (!isCurrent() || !changed) return res;
-        // Collect this property plus every ancestor key reachable through the
-        // parent graph, so deeply-nested mutations (user.address.city) re-trigger
-        // ancestor bindings. BFS with a visited set handles shared refs and cycles;
-        // the key set de-dups so each binding runs at most once per mutation.
-        const keys = new Set([p]);
-        const seen = new Set();
-        dirtyObjects.add(t);
-        let frontier = HELIUM.parentKeys.get(t) || [];
-        while (frontier.length) {
-          const next = [];
-          for (const { key, parent } of frontier) {
-            keys.add(key);
-            if (parent && !seen.has(parent)) {
-              seen.add(parent);
-              dirtyObjects.add(parent);
-              const pe = HELIUM.parentKeys.get(parent);
-              if (pe) next.push(...pe);
-            }
-          }
-          frontier = next;
-        }
-        enqueueBindings(keys);
-        saveState?.();
+        if (isCurrent() && changed) notify(t, p);
         return res
       },
       deleteProperty: (t, p) => {
-        if (!Reflect.has(t, p)) return true;
+        if (!Object.prototype.hasOwnProperty.call(t, p)) return true;
         const res = Reflect.deleteProperty(t, p);
-        if (res && isCurrent()) {
-          enqueueBindings([p]);
-          saveState?.();
-        }
+        if (res && isCurrent()) notify(t, p);
         return res;
       }
   };
+
+    // Collect the changed property plus every ancestor key reachable through
+    // the parent graph, so deeply-nested writes and deletions
+    // (user.address.city) re-trigger ancestor bindings. BFS with a visited set
+    // handles shared refs and cycles; the key set de-dups so each binding runs
+    // at most once per mutation.
+    const notify = (t, p) => {
+      const keys = new Set([p]);
+      const seen = new Set();
+      dirtyObjects.add(t);
+      let frontier = HELIUM.parentKeys.get(t) || [];
+      while (frontier.length) {
+        const next = [];
+        for (const { key, parent } of frontier) {
+          keys.add(key);
+          if (parent && !seen.has(parent)) {
+            seen.add(parent);
+            dirtyObjects.add(parent);
+            const pe = HELIUM.parentKeys.get(parent);
+            if (pe) next.push(...pe);
+          }
+        }
+        frontier = next;
+      }
+      enqueueBindings(keys);
+      saveState?.();
+    };
 
     // Initialize state if it doesn't exist
     const state = new Proxy({}, handler);
@@ -722,6 +739,21 @@ export function createHelium(options = {}) {
       const target = { ...source };
       const nested = new WeakMap();
       const roots = new WeakMap();
+      // Nested objects remember the objects they were read from, so an edit
+      // marks every ancestor dirty (as the root proxy's parent graph does) and
+      // @for rows holding any of them re-render.
+      const parents = new WeakMap();
+      const touched = target => {
+        const seen = new Set();
+        for (const pending = [rawOf(target)]; pending.length;) {
+          const raw = pending.pop();
+          if (seen.has(raw)) continue;
+          seen.add(raw);
+          dirtyObjects.add(raw);
+          pending.push(...(parents.get(raw) || []));
+        }
+        roots.get(target).forEach(key => trigger(scopeToken(scope, key)));
+      };
       const wrap = (value, rootKey) => {
         if (!isReactiveObject(value)) return value;
         let keys = roots.get(value);
@@ -732,13 +764,26 @@ export function createHelium(options = {}) {
           get(target, prop, receiver) {
             if (prop === RAW) return rawOf(target);
             let child = Reflect.get(target, prop, receiver);
+            if (isReactiveObject(child)) {
+              const raw = rawOf(child);
+              if (!parents.has(raw)) parents.set(raw, new Set());
+              parents.get(raw).add(rawOf(target));
+            }
             roots.get(target).forEach(key => child = wrap(child, key));
             return child;
           },
           set(target, prop, value, receiver) {
+            // Same-value writes don't notify, matching the root state proxy;
+            // otherwise a local @calculate re-triggers itself indefinitely.
+            const changed = !Object.is(Reflect.get(target, prop, receiver), value);
             const result = Reflect.set(target, prop, value, receiver);
-            dirtyObjects.add(rawOf(target));
-            roots.get(target).forEach(key => trigger(scopeToken(scope, key)));
+            if (changed) touched(target);
+            return result;
+          },
+          deleteProperty(target, prop) {
+            if (!Object.prototype.hasOwnProperty.call(target, prop)) return true;
+            const result = Reflect.deleteProperty(target, prop);
+            touched(target);
             return result;
           }
         });
@@ -751,7 +796,14 @@ export function createHelium(options = {}) {
           return wrap(Reflect.get(target, prop, receiver), prop);
         },
         set(target, prop, value, receiver) {
+          const changed = !Object.is(Reflect.get(target, prop, receiver), value);
           const result = Reflect.set(target, prop, value, receiver);
+          if (changed) trigger(scopeToken(scope, prop));
+          return result;
+        },
+        deleteProperty(target, prop) {
+          if (!Object.prototype.hasOwnProperty.call(target, prop)) return true;
+          const result = Reflect.deleteProperty(target, prop);
           trigger(scopeToken(scope, prop));
           return result;
         }
@@ -877,6 +929,10 @@ export function createHelium(options = {}) {
           set: (target, prop, value, receiver) => {
             const owner = ownerFor(scopes, prop);
             return owner ? Reflect.set(owner.values, prop, value) : Reflect.set(target, prop, value, receiver);
+          },
+          deleteProperty: (target, prop) => {
+            const owner = ownerFor(scopes, prop);
+            return Reflect.deleteProperty(owner ? owner.values : target, prop);
           }
         });
       // @standard-end
@@ -999,6 +1055,10 @@ export function createHelium(options = {}) {
         set: (target, prop, value) => {
           const owner = ownerFor(scopesFor(el), prop);
           return owner ? Reflect.set(owner.values, prop, value) : Reflect.set(target, prop, value, target);
+        },
+        deleteProperty: (target, prop) => {
+          const owner = ownerFor(scopesFor(el), prop);
+          return Reflect.deleteProperty(owner ? owner.values : target, prop);
         },
       });
       const refs = new Proxy({}, {
@@ -1130,8 +1190,10 @@ export function createHelium(options = {}) {
       }
     });
 
-    try {
-      const result = b.compiled.execute(createScope(elCtx, event, wrap(state), null, accessed));
+    // Dependencies are recorded even when evaluation throws: `user.name` with
+    // no `user` yet has still read `user`, and assigning it must re-run the
+    // binding rather than leave it permanently inactive.
+    const track = () => {
       const tracked = [...accessed].filter(([key, value]) => {
         // @standard-start
         if (typeof key !== "string") return key.scope.values[key.prop] === value;
@@ -1147,9 +1209,15 @@ export function createHelium(options = {}) {
       // @standard-end
       const keys = b.keys?.includes("*") ? [ALL] : tracked.concat(explicitKeys);
       updateBindingDependencies(b, keys);
+    };
+
+    try {
+      const result = b.compiled.execute(createScope(elCtx, event, wrap(state), null, accessed));
+      track();
       return { ok: true, result };
     } catch (err) {
       reportError(err, "binding", { element: b.el, directive: b.attr, expression: b.expression });
+      try { track(); } catch {}
       return { ok: false };
     }
   };
@@ -1218,6 +1286,9 @@ export function createHelium(options = {}) {
         // dirtyObjects during this burst. Untouched rows are skipped entirely.
         if (row.item !== raw || dirtyObjects.has(raw)) {
           row.scope.values[loop[0]] = source ? source[index] : item;
+          // An in-place edit keeps the same object, so that assignment is a
+          // same-value write and notifies nothing; notify the row directly.
+          trigger(scopeToken(row.scope, loop[0]));
         }
         if (loop[1] && row.index !== index) row.scope.values[loop[1]] = index;
       } else {
@@ -1390,6 +1461,9 @@ export function createHelium(options = {}) {
           handler.cancel?.();
           receiver.removeEventListener(event,handler,options);
         });
+        // A caller may still hold these bindings (applied a microtask later);
+        // mark them so that pending apply cannot resurrect them.
+        element.bound?.forEach(binding => binding.gone = true);
         HELIUM.processed.delete(e);  // allow reprocessing if the same node is re-inserted
         HELIUM.elements.delete(e);
         // @standard-start
@@ -1467,7 +1541,7 @@ export function createHelium(options = {}) {
     return record;
   };
 
-  const runInits = inits => inits.forEach(startLifecycle);
+  const runInits = inits => inits.forEach(init => owned(init.el) && startLifecycle(init));
 
   HELIUM.cleanup = cleanup;
 
@@ -1485,6 +1559,7 @@ export function createHelium(options = {}) {
     .flatMap(el => HELIUM.elements.get(el)?.bound || []);
 
   const forgetBinding = binding => {
+    binding.gone = true;
     const record = HELIUM.elements.get(binding.el);
     if (record?.bound) record.bound = record.bound.filter(candidate => candidate !== binding);
     if (binding.loop) {
@@ -1509,7 +1584,12 @@ export function createHelium(options = {}) {
   // Remove it whenever this instance ends so re-initialization—and Turbo's
   // cached clone of the page—starts from the declarative templates, not from a
   // mixture of templates and stale rendered siblings.
-  const teardownInstance = () => {
+  // Drop everything this instance holds in a subtree, rendered output included.
+  const release = el => {
+    boundIn(el).filter(binding => binding.loop || binding.cond).forEach(forgetBinding);
+    cleanup(el);
+  };
+  const teardownInstance = reclaim => {
     if (HELIUM.rootDisconnectTimer !== null) clearTimeout(HELIUM.rootDisconnectTimer);
     HELIUM.rootDisconnectTimer = null;
     HELIUM.observer?.disconnect();
@@ -1517,11 +1597,22 @@ export function createHelium(options = {}) {
     // @standard-start
     LIVE.delete(instanceRecord);
     // @standard-end
-    boundIn(root).filter(binding => binding.loop || binding.cond).forEach(forgetBinding);
-    HELIUM.cleanup?.(root);
+    release(root);
+    // @standard-start
+    // Unmounting (not re-initializing) hands a still-connected subtree back.
+    // Every enclosing root is asked; roots skip nested live roots, so only the
+    // innermost one actually takes it.
+    if (reclaim && root.isConnected) LIVE.forEach(other => other.root.contains(root) && other.adopt(root));
+    // @standard-end
   };
   HELIUM.teardown = teardownInstance;
   // @standard-start
+  HELIUM.release = release;
+  HELIUM.adopt = el => processElements(el).then(({ bindings, inits }) => {
+    if (!isCurrent()) return;
+    bindings.forEach(safeApplyBinding);
+    runInits(inits);
+  });
   HELIUM.bound = boundIn;
   // Re-apply a subtree's bindings after something outside Helium (a morph)
   // rewrote its DOM. Effects are skipped: their side effects already ran.
@@ -1660,14 +1751,11 @@ export function createHelium(options = {}) {
       // Accepts one root element or an array of roots (structural directives
       // insert many sibling rows at once — one pass beats one call per row).
       const roots = Array.isArray(element) ? element : [element];
-      let nested = [];
-      // @standard-start
-      // Another live root inside this one owns its own subtree.
-      nested = [...LIVE].map(instance => instance.root)
-        .filter(other => other !== root && root.contains(other));
-      // @standard-end
-      const heElements = roots.flatMap(el => [el, ...el.querySelectorAll("*")]).filter(e => {
-        if (nested.length && nested.some(other => other.contains(e))) return false;
+      let heElements = roots.flatMap(el => [el, ...el.querySelectorAll("*")]).filter(e => {
+        // @standard-start
+        // Another live root inside this one owns its own subtree.
+        if (!owned(e)) return false;
+        // @standard-end
         if (onlyAttributes) return roots.includes(e);
         if (HELIUM.processed.has(e)) return false;
         for (let i = 0; i < e.attributes.length; i++) {
@@ -1678,7 +1766,7 @@ export function createHelium(options = {}) {
       });
       // Mark the roots themselves (even attribute-less ones) so the
       // MutationObserver skips nodes a structural render already handed to us.
-      roots.forEach(el => HELIUM.processed.add(el));
+      roots.forEach(el => owned(el) && HELIUM.processed.add(el));
 
       // @standard-start
       const imports = [];
@@ -1707,8 +1795,11 @@ export function createHelium(options = {}) {
         }
       }));
       if (!isCurrent()) return { bindings: [], inits: [] };
+      // A root may have mounted inside this one while imports loaded; nothing
+      // is installed below this point until ownership is checked again.
+      heElements = heElements.filter(owned);
       imports.forEach(record => {
-        if (!record.module || (record.el !== root && !root.contains(record.el))) return;
+        if (!record.module || (record.el !== root && !root.contains(record.el)) || !owned(record.el)) return;
         Object.keys(record.module).forEach(key => key !== "default" && (state[key] = record.module[key]));
         if (typeof record.module.default !== "function") return;
         const key = behaviorKey(record.attr, record.moduleName);
@@ -1946,7 +2037,7 @@ export function createHelium(options = {}) {
                   const props = !paramsAttr.trim().startsWith("{") && paramsAttr.includes(":")
                     ? paramsAttr.split(":").map(s => s.trim()) : null;
                   const params = props
-                    ? props.slice(0, -1).reduceRight((acc, key) => ({ [key]: acc }), el[props.at(-1)])
+                    ? props.slice(0, -1).reduceRight((acc, key) => ({ [key]: acc }), el[props[props.length - 1]])
                     : compile(paramsAttr, true, { label: "@params", strict: true }).execute(createScope(el, e));
                   // Fire-and-forget from an attribute handler: log failures here.
                   ajax(value, eventName.toUpperCase(), options, params, el)
@@ -2036,6 +2127,12 @@ export function createHelium(options = {}) {
             bindings.forEach(safeApplyBinding);
             runInits(inits);
           }
+          // @standard-start
+          // An element moved within the root may now sit in a different local
+          // scope, so its bindings re-resolve their values and dependencies.
+          // Rows Helium itself reorders keep their scope and are skipped.
+          else if (n.nodeType === 1 && root.contains(n) && !GENERATED.has(n)) HELIUM.refresh(n);
+          // @standard-end
         }
       }
       const attributeChanges = new Map();
@@ -2103,7 +2200,7 @@ export function createHelium(options = {}) {
   // Teardown function
   function heliumTeardown() {
     generation++;
-    HELIUM?.teardown?.();
+    HELIUM?.teardown?.(true);
     HELIUM = null;
   }
 

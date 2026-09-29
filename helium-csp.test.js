@@ -114,9 +114,9 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
 
   describe('Expression Parser', () => {
     it('should preprocess count++ to assignment', () => {
-      expect(preprocess('count++')).toBe('(count = count + 1) - 1');
-      expect(preprocess('++count')).toBe('(count = count + 1)');
-      expect(preprocess('count--')).toBe('(count = count - 1) + 1');
+      expect(preprocess('count++')).toBe('((count = count - -1) - 1)');
+      expect(preprocess('++count')).toBe('(count = count - -1)');
+      expect(preprocess('count--')).toBe('((count = count - 1) + 1)');
       expect(preprocess('--count')).toBe('(count = count - 1)');
     });
 
@@ -1301,5 +1301,141 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       expect(mutationCount).toBeLessThan(10); // Should not cause excessive mutations
       observer.disconnect();
     });
+  });
+});
+
+describe('Reactivity regressions', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+  });
+
+  it('updates ancestor bindings when a nested property is deleted', async () => {
+    container.innerHTML = `
+      <span id="name" @text="user.name ?? 'missing'"></span>
+      <span id="size" @text="Object.keys(user).length"></span>`;
+    const state = await helium({ user: { name: 'Ada' } });
+    expect(container.querySelector('#name').textContent).toBe('Ada');
+    delete state.user.name;
+    await tick();
+    expect(container.querySelector('#name').textContent).toBe('missing');
+    expect(container.querySelector('#size').textContent).toBe('0');
+  });
+
+  it('updates bindings when a property of local state is deleted', async () => {
+    container.innerHTML = `
+      <section @data="{ user: { name: 'Ada', role: 'admin' } }">
+        <span id="name" @text="user.name ?? 'missing'"></span>
+        <span id="size" @text="Object.keys(user).length"></span>
+        <button id="drop-name" @click="dropName(user)"></button>
+      </section>`;
+    await helium({ dropName: user => { delete user.name; } });
+    expect(container.querySelector('#name').textContent).toBe('Ada');
+    container.querySelector('#drop-name').click();
+    await tick();
+    expect(container.querySelector('#name').textContent).toBe('missing');
+    expect(container.querySelector('#size').textContent).toBe('1');
+  });
+  it('does not re-trigger local bindings for unchanged writes', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    container.innerHTML = `
+      <section @data="{ n: 1, user: { name: 'Ada' } }">
+        <span @calculate:n="Math.min(n, 10)"></span>
+        <span id="n" @text="n"></span>
+        <span @calculate:user.name="user.name"></span>
+      </section>`;
+    await helium({});
+    await tick();
+    expect(container.querySelector('#n').textContent).toBe('1');
+    expect(errors).not.toHaveBeenCalledWith(expect.stringContaining('infinite update loop'));
+    errors.mockRestore();
+  });
+  it('recovers a binding whose first evaluation threw', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    container.innerHTML = `
+      <span id="root" @text="user.name"></span>
+      <section @data="{ profile: null }">
+        <span id="local" @text="profile.name"></span>
+        <button @click="profile = { name: 'Local' }"></button>
+      </section>`;
+    const state = await helium({});
+    state.user = { name: 'Ada' };
+    container.querySelector('button').click();
+    await tick();
+    expect(container.querySelector('#root').textContent).toBe('Ada');
+    expect(container.querySelector('#local').textContent).toBe('Local');
+    errors.mockRestore();
+  });
+  it('refreshes rendered rows after in-place edits to a local list', async () => {
+    container.innerHTML = `
+      <section @data="{ items: [{ id: 1, name: 'Ada', profile: { city: 'London' } }] }">
+        <template @for="item in items" :key="item.id">
+          <p class="row"><span class="name" @text="item.name ?? 'none'"></span> <span class="city" @text="item.profile.city"></span></p>
+        </template>
+        <span id="outside" @text="items[0].name ?? 'none'"></span>
+        <button id="rename" @click="items[0].name = 'Grace'"></button>
+        <button id="move" @click="items[0].profile.city = 'Paris'"></button>
+        <button id="drop" @click="dropName(items[0])"></button>
+      </section>`;
+    await helium({ dropName: item => { delete item.name; } });
+    await tick();
+    const text = selector => container.querySelector(selector).textContent;
+    expect(text('.name')).toBe('Ada');
+
+    container.querySelector('#rename').click();
+    await tick();
+    expect(text('#outside')).toBe('Grace');
+    expect(text('.name')).toBe('Grace');
+
+    container.querySelector('#move').click();
+    await tick();
+    expect(text('.city')).toBe('Paris');
+
+    container.querySelector('#drop').click();
+    await tick();
+    expect(text('.name')).toBe('none');
+    expect(text('#outside')).toBe('none');
+  });
+  it('keeps postfix and prefix update precedence inside larger expressions', async () => {
+    container.innerHTML = `
+      <button id="post-inc" @click="result = count++ * 2"></button>
+      <button id="post-dec" @click="result = count-- * 2"></button>
+      <button id="pre-inc" @click="result = ++count * 2"></button>
+      <button id="text-inc" @click="result = label++ + 1"></button>`;
+    const state = await helium({ count: 3, result: 0, label: '3' });
+    const click = id => container.querySelector(id).click();
+    click('#post-inc');
+    expect([state.result, state.count]).toEqual([6, 4]);
+    click('#post-dec');
+    expect([state.result, state.count]).toEqual([8, 3]);
+    click('#pre-inc');
+    expect([state.result, state.count]).toEqual([8, 4]);
+    click('#text-inc');
+    expect([state.result, state.label]).toEqual([4, 4]);
+  });
+  it('rebinds an element moved into another local scope', async () => {
+    container.innerHTML = `
+      <section id="a" @data="{ label: 'A' }"><span id="moving" @text="label"></span><button id="set-a" @click="label = 'A2'"></button></section>
+      <section id="b" @data="{ label: 'B' }"><button id="set-b" @click="label = 'B2'"></button></section>`;
+    await helium({});
+    const moving = container.querySelector('#moving');
+    expect(moving.textContent).toBe('A');
+    container.querySelector('#b').append(moving);
+    await tick();
+    expect(moving.textContent).toBe('B');
+    container.querySelector('#set-a').click();
+    await tick();
+    expect(moving.textContent).toBe('B');
+    container.querySelector('#set-b').click();
+    await tick();
+    expect(moving.textContent).toBe('B2');
   });
 });

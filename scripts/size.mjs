@@ -9,15 +9,15 @@ const check = process.argv.includes("--check");
 // Release ceilings retain a small margin over the measured production bundles.
 // Lite is deliberately capped at its original 3 KB gzip goal.
 const budgets = {
-  "helium.min.js": 13260,
+  "helium.min.js": 13540,
   "helium-lite.min.js": 3000,
-  "helium-sse.min.js": 13750,
-  "helium-turbo.min.js": 14170,
-  "helium-turbo-sse.min.js": 14580,
-  "helium-csp.min.js": 17400,
-  "helium-csp-sse.min.js": 17820,
-  "helium-csp-turbo.min.js": 18400,
-  "helium-csp-turbo-sse.min.js": 18810,
+  "helium-sse.min.js": 14035,
+  "helium-turbo.min.js": 14470,
+  "helium-turbo-sse.min.js": 14880,
+  "helium-csp.min.js": 17690,
+  "helium-csp-sse.min.js": 18110,
+  "helium-csp-turbo.min.js": 18690,
+  "helium-csp-turbo-sse.min.js": 19115,
 };
 
 const rows = [];

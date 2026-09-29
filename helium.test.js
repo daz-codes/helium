@@ -3280,3 +3280,259 @@ describe('Structural output ownership', () => {
     inner.heliumTeardown();
   });
 });
+
+describe('Reactivity regressions', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.setAttribute('data-helium', '');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+  });
+
+  it('updates ancestor bindings when a nested property is deleted', async () => {
+    container.innerHTML = `
+      <span id="name" @text="user.name ?? 'missing'"></span>
+      <span id="size" @text="Object.keys(user).length"></span>`;
+    const state = await helium({ user: { name: 'Ada' } });
+    expect(container.querySelector('#name').textContent).toBe('Ada');
+    delete state.user.name;
+    await tick();
+    expect(container.querySelector('#name').textContent).toBe('missing');
+    expect(container.querySelector('#size').textContent).toBe('0');
+  });
+
+  it('updates bindings when a property of local state is deleted', async () => {
+    container.innerHTML = `
+      <section @data="{ user: { name: 'Ada', role: 'admin' } }">
+        <span id="name" @text="user.name ?? 'missing'"></span>
+        <span id="size" @text="Object.keys(user).length"></span>
+        <button id="drop-name" @click="dropName(user)"></button>
+      </section>`;
+    await helium({ dropName: user => { delete user.name; } });
+    expect(container.querySelector('#name').textContent).toBe('Ada');
+    container.querySelector('#drop-name').click();
+    await tick();
+    expect(container.querySelector('#name').textContent).toBe('missing');
+    expect(container.querySelector('#size').textContent).toBe('1');
+  });
+
+  it('deletes a top-level local key from its own scope', async () => {
+    container.innerHTML = `
+      <section @data="{ flag: 'local' }">
+        <span id="flag" @text="flag ?? 'gone'"></span>
+        <button @click="delete flag"></button>
+      </section>`;
+    const state = await helium({ flag: 'global' });
+    expect(container.querySelector('#flag').textContent).toBe('local');
+    container.querySelector('button').click();
+    await tick();
+    expect(state.flag).toBe('global');
+    expect(container.querySelector('#flag').textContent).toBe('global');
+  });
+  it('does not re-trigger local bindings for unchanged writes', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    container.innerHTML = `
+      <section @data="{ n: 1, user: { name: 'Ada' } }">
+        <span @calculate:n="Math.min(n, 10)"></span>
+        <span id="n" @text="n"></span>
+        <span @calculate:user.name="user.name"></span>
+      </section>`;
+    await helium({});
+    await tick();
+    expect(container.querySelector('#n').textContent).toBe('1');
+    expect(errors).not.toHaveBeenCalledWith(expect.stringContaining('infinite update loop'));
+    errors.mockRestore();
+  });
+  it('recovers a binding whose first evaluation threw', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    container.innerHTML = `
+      <span id="root" @text="user.name"></span>
+      <section @data="{ profile: null }">
+        <span id="local" @text="profile.name"></span>
+        <button @click="profile = { name: 'Local' }"></button>
+      </section>`;
+    const state = await helium({});
+    state.user = { name: 'Ada' };
+    container.querySelector('button').click();
+    await tick();
+    expect(container.querySelector('#root').textContent).toBe('Ada');
+    expect(container.querySelector('#local').textContent).toBe('Local');
+    errors.mockRestore();
+  });
+  it('refreshes rendered rows after in-place edits to a local list', async () => {
+    container.innerHTML = `
+      <section @data="{ items: [{ id: 1, name: 'Ada', profile: { city: 'London' } }] }">
+        <template @for="item in items" :key="item.id">
+          <p class="row"><span class="name" @text="item.name ?? 'none'"></span> <span class="city" @text="item.profile.city"></span></p>
+        </template>
+        <span id="outside" @text="items[0].name ?? 'none'"></span>
+        <button id="rename" @click="items[0].name = 'Grace'"></button>
+        <button id="move" @click="items[0].profile.city = 'Paris'"></button>
+        <button id="drop" @click="dropName(items[0])"></button>
+      </section>`;
+    await helium({ dropName: item => { delete item.name; } });
+    await tick();
+    const text = selector => container.querySelector(selector).textContent;
+    expect(text('.name')).toBe('Ada');
+
+    container.querySelector('#rename').click();
+    await tick();
+    expect(text('#outside')).toBe('Grace');
+    expect(text('.name')).toBe('Grace');
+
+    container.querySelector('#move').click();
+    await tick();
+    expect(text('.city')).toBe('Paris');
+
+    container.querySelector('#drop').click();
+    await tick();
+    expect(text('.name')).toBe('none');
+    expect(text('#outside')).toBe('none');
+  });
+  it('transfers a subtree to a root mounted inside an existing root', async () => {
+    const parentHit = vi.fn(), childHit = vi.fn();
+    container.innerHTML = `
+      <main id="outer">
+        <span id="parent-label" @text="label"></span>
+        <section id="inner">
+          <button @click="hit()">Hit</button>
+          <span id="child-label" @text="label"></span>
+          <template @for="n in list" :key="n"><i class="item" @text="n"></i></template>
+        </section>
+      </main>`;
+    const parent = await helium.mount('#outer', { label: 'parent', hit: parentHit, list: [1, 2] });
+    await tick();
+    expect(container.querySelectorAll('.item')).toHaveLength(2);
+    const child = await helium.mount('#inner', { label: 'child', hit: childHit, list: [7] });
+    await tick();
+
+    container.querySelector('#inner button').click();
+    expect(childHit).toHaveBeenCalledTimes(1);
+    expect(parentHit).not.toHaveBeenCalled();
+    parent.state.label = 'parent changed';
+    await tick();
+    expect(container.querySelector('#child-label').textContent).toBe('child');
+    expect(container.querySelector('#parent-label').textContent).toBe('parent changed');
+    expect([...container.querySelectorAll('.item')].map(i => i.textContent)).toEqual(['7']);
+
+    // Unmounting the child hands the subtree back to the parent.
+    child.unmount();
+    await tick();
+    expect(container.querySelector('#child-label').textContent).toBe('parent changed');
+    expect([...container.querySelectorAll('.item')].map(i => i.textContent)).toEqual(['1', '2']);
+    container.querySelector('#inner button').click();
+    expect(parentHit).toHaveBeenCalledTimes(1);
+    expect(childHit).toHaveBeenCalledTimes(1);
+    parent.unmount();
+  });
+
+  it('rejects mounting a root that is already mounted', async () => {
+    const hit = vi.fn();
+    container.innerHTML = '<section id="once"><button @click="hit()">Hit</button></section>';
+    const first = await helium.mount('#once', { hit });
+    const instance = createHelium({ root: '#once' });
+    await expect(instance.helium({ hit })).rejects.toThrow(/already owned/);
+    container.querySelector('button').click();
+    expect(hit).toHaveBeenCalledTimes(1);
+    first.unmount();
+  });
+
+  it('rejects mounting inside another root\'s rendered output', async () => {
+    container.innerHTML = `<main id="list-root">
+      <template @for="n in [1]" :key="n"><section class="row"></section></template></main>`;
+    const parent = await helium.mount('#list-root', {});
+    await tick();
+    const instance = createHelium({ root: container.querySelector('.row') });
+    await expect(instance.helium({})).rejects.toThrow(/already owned/);
+    parent.unmount();
+  });
+  it('keeps postfix and prefix update precedence inside larger expressions', async () => {
+    container.innerHTML = `
+      <button id="post-inc" @click="result = count++ * 2"></button>
+      <button id="post-dec" @click="result = count-- * 2"></button>
+      <button id="pre-inc" @click="result = ++count * 2"></button>
+      <button id="text-inc" @click="result = label++ + 1"></button>`;
+    const state = await helium({ count: 3, result: 0, label: '3' });
+    const click = id => container.querySelector(id).click();
+    click('#post-inc');
+    expect([state.result, state.count]).toEqual([6, 4]);
+    click('#post-dec');
+    expect([state.result, state.count]).toEqual([8, 3]);
+    click('#pre-inc');
+    expect([state.result, state.count]).toEqual([8, 4]);
+    click('#text-inc');
+    expect([state.result, state.label]).toEqual([4, 4]);
+  });
+  it('rebinds an element moved into another local scope', async () => {
+    container.innerHTML = `
+      <section id="a" @data="{ label: 'A' }"><span id="moving" @text="label"></span><button id="set-a" @click="label = 'A2'"></button></section>
+      <section id="b" @data="{ label: 'B' }"><button id="set-b" @click="label = 'B2'"></button></section>`;
+    await helium({});
+    const moving = container.querySelector('#moving');
+    expect(moving.textContent).toBe('A');
+    container.querySelector('#b').append(moving);
+    await tick();
+    expect(moving.textContent).toBe('B');
+    container.querySelector('#set-a').click();
+    await tick();
+    expect(moving.textContent).toBe('B');
+    container.querySelector('#set-b').click();
+    await tick();
+    expect(moving.textContent).toBe('B2');
+  });
+  describe('overlapping mounts started without waiting', () => {
+    const markup = `<main id="race-outer"><section id="race-inner">
+      <button @click="hit()">Hit</button><output @text="name"></output><i @init="started()"></i>
+    </section></main>`;
+    const probe = async (outerApp, innerApp, calls, outerInits = 0) => {
+      await tick();
+      container.querySelector('#race-inner button').click();
+      outerApp.state.name = 'outer changed';
+      await tick();
+      expect(calls.outerHits).toBe(0);
+      expect(calls.innerHits).toBe(1);
+      expect(calls.outerInits).toBe(outerInits);
+      expect(container.querySelector('#race-inner output').textContent).toBe('inner');
+    };
+    const states = calls => [
+      { name: 'outer', hit: () => calls.outerHits++, started: () => calls.outerInits++ },
+      { name: 'inner', hit: () => calls.innerHits++, started: () => calls.innerInits++ },
+    ];
+
+    it('gives the subtree to the inner root when both mount concurrently', async () => {
+      container.innerHTML = markup;
+      const calls = { outerHits: 0, innerHits: 0, outerInits: 0, innerInits: 0 };
+      const [outerState, innerState] = states(calls);
+      const [outer, inner] = await Promise.all([
+        helium.mount('#race-outer', outerState),
+        helium.mount('#race-inner', innerState),
+      ]);
+      await probe(outer, inner, calls);
+      expect(calls.innerInits).toBe(1);
+      inner.unmount();
+      outer.unmount();
+    });
+
+    it('does not let a pending hand-back override an immediate remount', async () => {
+      container.innerHTML = markup;
+      const calls = { outerHits: 0, innerHits: 0, outerInits: 0, innerInits: 0 };
+      const [outerState, innerState] = states(calls);
+      const outer = await helium.mount('#race-outer', outerState);
+      const previous = await helium.mount('#race-inner', { name: 'old', hit: () => {}, started: () => {} });
+      previous.unmount();
+      const inner = await helium.mount('#race-inner', innerState);
+      // The outer root owned the subtree before any child existed, so its
+      // @init ran once then; the aborted hand-back must not run it again.
+      await probe(outer, inner, calls, 1);
+      expect(calls.innerInits).toBe(1);
+      inner.unmount();
+      outer.unmount();
+    });
+  });
+});

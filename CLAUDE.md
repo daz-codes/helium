@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 Helium is an ultra-light reactive library that makes HTML interactive using
-declarative attributes. Current production builds are approximately 13.2KB
-Standard, 2.6KB Lite, and 17.3KB CSP when minified and gzipped. Turbo navigation
+declarative attributes. Current production builds are approximately 13.5KB
+Standard, 2.6KB Lite, and 17.6KB CSP when minified and gzipped. Turbo navigation
 and SSE are separate entry points. These figures come from the Terser builds
 enforced by `npm run size:check`; Lite has a hard 3KB gzip ceiling. Source entry
 points require no build step and work directly in the browser.
@@ -20,14 +20,21 @@ npm run test:run  # Run tests once (CI mode)
 npm run build     # Generate minified, self-contained bundles in dist/
 npm run size      # Report raw, gzip, and Brotli sizes
 npm run test:dist # Smoke-test every generated production bundle
+npm run test:release # Enforce the browser floor and version-pinned docs
 npm run test:browser # Run Chromium smoke tests against browser entry points
-npm run check     # Run tests, build, and enforce size budgets
-npm run check:ci  # Run check plus the real-browser smoke suite
+npm run check     # Run tests, build, enforce size budgets and release checks
+npm run test:app  # Drive a Rails-style Turbo app on the packed tarball in 3 browsers
+npm run check:ci  # Run check plus the real-browser smoke suite and app scenario
 npm run bench     # Benchmark vs Alpine, React, Datastar in Chromium (scripts/benchmark.mjs)
 ```
 
 There is no consumer build requirement; the source files are browser-ready ES
 modules. The maintainer build generates the optimized `dist/` entry points.
+
+Supported browsers: Chrome/Edge 92+, Firefox 90+, Safari 15.4+ for every build.
+`scripts/check-release.mjs` enforces this (syntax via esbuild, plus a denylist of
+newer built-ins) and requires README/LLM_GUIDE CDN and npm examples to be pinned
+to `package.json`'s version, so bump docs with the version.
 
 ## Architecture
 

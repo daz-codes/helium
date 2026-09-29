@@ -148,8 +148,10 @@ const transformCodeSegments = (expr, transform) => {
 };
 
 // Pre-process expressions to handle ++ and -- operators
-// Transforms: count++ -> (count = count + 1) - 1  (returns old value)
-// Transforms: ++count -> (count = count + 1)      (returns new value)
+// Transforms: count++ -> ((count = count - -1) - 1)  (returns old value)
+// Transforms: ++count -> (count = count - -1)        (returns new value)
+// The outer parentheses keep `count++ * 2` a single operand, and `- -1`
+// converts to a number like the native operators (jexpr's unary + does not).
 const preprocess = (expr) => {
   // If expression looks like raw HTML, wrap it in quotes to make it a string
   const trimmed = expr.trim();
@@ -165,9 +167,9 @@ const preprocess = (expr) => {
   return transformCodeSegments(expr, code => code
     .replace(/\bnew\s+Date\b/g, '$Date')
     .replace(/\bnew\s+FormData\b/g, '$FormData')
-    .replace(/(\$?\w+(?:\.\w+|\[\w+\])*)(\+\+)/g, '($1 = $1 + 1) - 1')
-    .replace(/(\$?\w+(?:\.\w+|\[\w+\])*)(\-\-)/g, '($1 = $1 - 1) + 1')
-    .replace(/\+\+(\$?\w+(?:\.\w+|\[\w+\])*)/g, '($1 = $1 + 1)')
+    .replace(/(\$?\w+(?:\.\w+|\[\w+\])*)(\+\+)/g, '(($1 = $1 - -1) - 1)')
+    .replace(/(\$?\w+(?:\.\w+|\[\w+\])*)(\-\-)/g, '(($1 = $1 - 1) + 1)')
+    .replace(/\+\+(\$?\w+(?:\.\w+|\[\w+\])*)/g, '($1 = $1 - -1)')
     .replace(/\-\-(\$?\w+(?:\.\w+|\[\w+\])*)/g, '($1 = $1 - 1)'));
 };
 

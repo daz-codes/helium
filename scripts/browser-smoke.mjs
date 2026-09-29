@@ -732,12 +732,57 @@ async function testTurboAutoPermanent(baseUrl, browser) {
   });
 }
 
+// Overlapping mounts that start without waiting for each other: the inner root
+// must end up the only owner of its subtree in every build.
+async function testOverlappingMounts(baseUrl, browser) {
+  for (const entry of ["/helium.js", "/helium-csp.js", "/dist/helium.min.js", "/dist/helium-csp.min.js"]) {
+    await withPage(browser, baseUrl, "/blank.html", async page => {
+      const results = await page.evaluate(async url => {
+        const module = await import(url);
+        module.heliumTeardown();
+        const tick = () => new Promise(resolve => setTimeout(resolve, 15));
+        const results = {};
+        for (const scenario of ["concurrent", "immediate-remount"]) {
+          document.body.innerHTML = '<main><section><button @click="hit()"></button><output @text="name"></output></section></main>';
+          const hits = { outer: 0, inner: 0 };
+          const outerState = { name: "outer", hit: () => hits.outer++ };
+          const innerState = { name: "inner", hit: () => hits.inner++ };
+          let outer, inner;
+          if (scenario === "concurrent") {
+            [outer, inner] = await Promise.all([module.default.mount("main", outerState), module.default.mount("section", innerState)]);
+          } else {
+            outer = await module.default.mount("main", outerState);
+            (await module.default.mount("section", { name: "old", hit() {} })).unmount();
+            inner = await module.default.mount("section", innerState);
+          }
+          await tick();
+          document.querySelector("button").click();
+          outer.state.name = "outer changed";
+          await tick();
+          results[scenario] = { ...hits, text: document.querySelector("output").textContent };
+          inner.unmount();
+          outer.unmount();
+        }
+        return results;
+      }, `${baseUrl}${entry}`);
+      for (const [scenario, result] of Object.entries(results)) {
+        assert(result.outer === 0 && result.inner === 1 && result.text === "inner",
+          `${entry} ${scenario} overlapping mount left duplicate ownership: ${JSON.stringify(result)}`);
+      }
+    });
+  }
+}
+
 async function testBrowserEntryImports(baseUrl, browser) {
   await withPage(browser, baseUrl, "/blank.html", async page => {
     const results = await page.evaluate(async entries => {
       const loaded = [];
       for (const entry of entries) {
         const module = await import(`${entry}?cache=${crypto.randomUUID()}`);
+        // Only the exports are under test. Cancel each copy's pending
+        // automatic start: many copies sharing helium.js would otherwise all
+        // claim <body>, which Helium now rejects as a second owner.
+        module.heliumTeardown?.();
         loaded.push([
           entry,
           typeof module.default,
@@ -869,6 +914,7 @@ try {
       await testTurboFramesAndStreams(baseUrl, browser);
       await testTurboPermanent(baseUrl, browser);
       await testTurboAutoPermanent(baseUrl, browser);
+      await testOverlappingMounts(baseUrl, browser);
       await testBrowserEntryImports(baseUrl, browser);
       if (name === "chromium") await testExamples(baseUrl, browser);
       console.log(`${name} browser smoke tests passed.`);
