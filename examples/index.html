@@ -1,486 +1,261 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Helium Examples</title>
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      margin: 0;
-      padding: 2rem;
-    }
-
-    .page {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      color: white;
-      text-align: center;
-      margin-bottom: 2rem;
-      font-size: 2.5rem;
-    }
-
-    .examples {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1.5rem;
-    }
-
-    .card {
-      background: white;
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-
-    .card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 15px 50px rgba(0,0,0,0.25);
-    }
-
-    .card.active {
-      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-      border: 2px solid #667eea;
-    }
-
-    .card h2 {
-      margin: 0 0 1rem 0;
-      color: #333;
-      font-size: 1.25rem;
-      border-bottom: 2px solid #eee;
-      padding-bottom: 0.5rem;
-    }
-
-    button {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      padding: 0.6rem 1.2rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.95rem;
-      transition: transform 0.1s, box-shadow 0.2s;
-    }
-
-    button:hover {
-      transform: scale(1.02);
-      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-    }
-
-    button:active {
-      transform: scale(0.98);
-    }
-
-    input, textarea, select {
-      width: 100%;
-      padding: 0.6rem;
-      border: 2px solid #ddd;
-      border-radius: 6px;
-      font-size: 1rem;
-      margin-bottom: 0.5rem;
-      transition: border-color 0.2s;
-    }
-
-    input:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: #667eea;
-    }
-
-    .button-group {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .color-preview {
-      width: 100%;
-      height: 60px;
-      border-radius: 6px;
-      margin-top: 0.5rem;
-      transition: background-color 0.3s;
-    }
-
-    .keyboard-display {
-      font-family: monospace;
-      background: #1a1a2e;
-      color: #0f0;
-      padding: 1rem;
-      border-radius: 6px;
-      min-height: 40px;
-    }
-
-    .progress-bar {
-      width: 100%;
-      height: 20px;
-      background: #eee;
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #667eea, #764ba2);
-      transition: width 0.3s;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 0;
-      margin-bottom: 1rem;
-    }
-
-    .tab {
-      padding: 0.5rem 1rem;
-      background: #eee;
-      border: none;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .tab:first-child { border-radius: 6px 0 0 6px; }
-    .tab:last-child { border-radius: 0 6px 6px 0; }
-    .tab.active { background: #667eea; color: white; }
-
-    .tab-content {
-      padding: 1rem;
-      background: #f9f9f9;
-      border-radius: 6px;
-    }
-
-    .response {
-      padding: 1rem;
-      border-radius: 6px;
-      margin-top: 0.5rem;
-    }
-
-    .response.blue { background: #e3f2fd; }
-    .response.red { background: #ffebee; }
-
-    .form label {
-      display: block;
-      margin-bottom: 0.5rem;
-    }
-
-    .form label span {
-      display: block;
-      font-weight: 500;
-      margin-bottom: 0.25rem;
-    }
-
-    .post {
-      background: #f0f0f0;
-      padding: 1rem;
-      border-radius: 6px;
-      margin-top: 0.5rem;
-    }
-
-    .post h1 {
-      font-size: 1.1rem;
-      color: #333;
-      margin: 0 0 0.5rem 0;
-      text-align: left;
-    }
-
-    .post p {
-      margin: 0;
-      color: #666;
-    }
-
-    .emoji-picker {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .emoji-btn {
-      font-size: 1.5rem;
-      padding: 0.5rem;
-      background: #f0f0f0;
-      border-radius: 8px;
-    }
-
-    .emoji-btn:hover {
-      background: #e0e0e0;
-    }
-
-    .selected-emoji {
-      font-size: 3rem;
-      text-align: center;
-      padding: 1rem;
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive examples for Helium's HTML-first reactive runtime.">
+  <title>Helium — HTML-first interactions</title>
+  <link rel="stylesheet" href="showcase.css">
+  <script src="file-warning.js" defer></script>
 </head>
 <body>
-
-<div class="page" data-helium>
-  <h1>Helium Examples</h1>
-
-  <div class="examples">
-
-    <!-- Counter -->
-    <div class="card">
-      <h2>Counter</h2>
-      <p>Simple reactive counter with increment/decrement.</p>
-      <div class="button-group">
-        <button @click="count--">-</button>
-        <button @click="count++">+</button>
+  <div class="shell">
+    <nav class="site-nav" aria-label="Example navigation">
+      <a class="brand" href="index.html"><span class="brand-mark">He</span> Helium examples</a>
+      <div class="nav-links">
+        <a href="index.html" aria-current="page">Standard</a>
+        <a href="index-lite.html">Lite</a>
+        <a href="todo.html">Todo</a>
+        <a href="validation.html">Requests</a>
+        <a href="sse-demo.html">SSE</a>
       </div>
-      <p>Count: <b @text="count">0</b></p>
-    </div>
+    </nav>
 
-    <!-- Dynamic Classes -->
-    <div
-      @data="{ active: false }"
-      :class="{active: active}"
-      class="card"
+    <main
+      data-helium
+      @data="{ heroCount: 12 }"
+      @import="showcase-utils"
     >
-      <h2>Dynamic Classes</h2>
-      <p>Toggle the active state to change card styling.</p>
-      <button @click="active = !active">
-        Toggle (<span @text="active ? 'ON' : 'OFF'"></span>)
-      </button>
-    </div>
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Standard · 12.90 KB gzip</p>
+          <h1>HTML that already knows <strong>what to do.</strong></h1>
+          <p>
+            Common interactions stay in the view. When behaviour grows up,
+            lifecycle-aware modules, scoped state and safe cleanup are ready—without
+            turning every toggle into a controller.
+          </p>
+        </div>
+        <div class="hero-demo" aria-label="Live counter example">
+          <div class="metric">
+            <div>
+              <small>Reactive state</small>
+              <output @text="heroCount">12</output>
+            </div>
+            <span class="pill"><span class="dot live"></span> live</span>
+          </div>
+          <div class="button-row">
+            <button class="button secondary small" @click="heroCount--">Decrease</button>
+            <button class="button small" @click="heroCount++">Increase</button>
+          </div>
+          <p class="code-line">@click="heroCount++"</p>
+        </div>
+      </header>
 
-    <!-- Two-way Binding -->
-    <div class="card">
-      <h2>Two-Way Binding</h2>
-      <input @bind="firstname" placeholder="First name">
-      <input @bind="lastname" placeholder="Last name">
-      <span @calculate:fullname="firstname && lastname ? firstname + ' ' + lastname : firstname || lastname || 'stranger'"></span>
-      <p>Hello, <b @text="fullname">stranger</b>!</p>
-      <button @click="firstname = '', lastname = ''">Clear</button>
-    </div>
+      <section aria-labelledby="html-first-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">The HTML-first layer</p>
+            <h2 id="html-first-title">Useful before you write JavaScript.</h2>
+          </div>
+          <p>Scoped data, keyed DOM identity, form binding and structural templates cover the interactions that usually become one-off controllers.</p>
+        </div>
 
-    <!-- Visibility Toggle -->
-    <div @data="{ show: true }" class="card">
-      <h2>Visibility Toggle</h2>
-      <button @click="show = !show" @text="show ? 'Hide' : 'Show'">Show</button>
-      <p @visible="show">Now you see me!</p>
-      <p @hidden="show">Now you don't!</p>
-    </div>
+        <div class="grid">
+          <article class="card wide" @data="{
+            draft: '', nextId: 4,
+            tasks: [
+              { id: 1, title: 'Keep behaviour near the markup', done: true },
+              { id: 2, title: 'Preserve keyed DOM identity', done: false },
+              { id: 3, title: 'Clean up removed rows', done: false }
+            ]
+          }">
+            <span class="feature-label">@data · @bind · @for · @if</span>
+            <div class="split">
+              <div>
+                <h3>A keyed task list, entirely in HTML</h3>
+                <p class="muted">Rows move and update without losing their DOM identity.</p>
+              </div>
+              <span class="pill"><b @text="tasks.filter(task => !task.done).length">2</b>&nbsp; open</span>
+            </div>
 
-    <!-- Checkbox Binding -->
-    <div class="card" @data="{ agreed: false, newsletter: true }">
-      <h2>Checkbox Binding</h2>
-      <label>
-        <input type="checkbox" @bind="agreed"> I agree to the terms
-      </label>
-      <label>
-        <input type="checkbox" @bind="newsletter"> Subscribe to newsletter
-      </label>
-      <p>
-        Terms: <b @text="agreed ? 'Accepted' : 'Not accepted'">Not accepted</b><br>
-        Newsletter: <b @text="newsletter ? 'Subscribed' : 'Not subscribed'">Subscribed</b>
-      </p>
-      <button @click="agreed = true, newsletter = true">Accept All</button>
-    </div>
+            <form class="cluster" @submit.prevent="draft.trim() && (tasks = [...tasks, { id: nextId++, title: draft.trim(), done: false }], draft = '')">
+              <input style="flex: 1 1 240px" @bind.trim="draft" aria-label="New task" placeholder="Add a task…">
+              <button class="button" type="submit">Add task</button>
+            </form>
 
-    <!-- Radio Buttons -->
-    <div class="card" @data="{ size: 'medium' }">
-      <h2>Radio Buttons</h2>
-      <label><input type="radio" name="size" value="small" @bind="size"> Small</label>
-      <label><input type="radio" name="size" value="medium" @bind="size"> Medium</label>
-      <label><input type="radio" name="size" value="large" @bind="size"> Large</label>
-      <p>Selected size: <b @text="size">medium</b></p>
-    </div>
+            <ul class="task-list">
+              <template @for="task in tasks" :key="task.id">
+                <li class="task" :class="{ done: task.done }">
+                  <input type="checkbox" :checked="task.done" @click="task.done = !task.done" :aria-label="'Complete ' + task.title">
+                  <span @text="task.title"></span>
+                  <button class="icon-button" @click="tasks = tasks.filter(item => item.id !== task.id)" :aria-label="'Remove ' + task.title">×</button>
+                </li>
+              </template>
+            </ul>
+            <template @if="tasks.length === 0">
+              <div class="demo-box">Nothing left. The conditional template owns this empty state.</div>
+            </template>
+          </article>
 
-    <!-- Select Dropdown -->
-    <div class="card" @data="{ color: 'blue' }">
-      <h2>Select Dropdown</h2>
-      <select @bind="color">
-        <option value="red">Red</option>
-        <option value="green">Green</option>
-        <option value="blue">Blue</option>
-        <option value="purple">Purple</option>
-      </select>
-      <div class="color-preview" :style="{ backgroundColor: color }"></div>
-    </div>
+          <article class="card tint-coral" @data="{ first: 'Ada', last: 'Lovelace', role: 'Programmer' }">
+            <span class="feature-label">local @data · @calculate</span>
+            <h3>A self-contained profile</h3>
+            <div class="stack">
+              <label>First name <input @bind.trim="first"></label>
+              <label>Last name <input @bind.trim="last"></label>
+              <label>Role
+                <select @bind="role">
+                  <option>Programmer</option>
+                  <option>Designer</option>
+                  <option>Founder</option>
+                </select>
+              </label>
+            </div>
+            <span hidden @calculate:fullname="[first, last].filter(Boolean).join(' ')"></span>
+            <div class="preview" style="margin-top: 16px">
+              <h4 @text="fullname || 'Anonymous'">Ada Lovelace</h4>
+              <p @text="role">Programmer</p>
+            </div>
+          </article>
+        </div>
+      </section>
 
-    <!-- Dynamic Style -->
-    <div class="card" @data="{ width: 50 }">
-      <h2>Dynamic Style</h2>
-      <input type="range" min="0" max="100" @bind="width">
-      <p>Width: <b @text="width">50</b>%</p>
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: width + '%' }"></div>
-      </div>
-    </div>
+      <section aria-labelledby="behaviour-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">The behaviour layer</p>
+            <h2 id="behaviour-title">Small inline. Reusable when it matters.</h2>
+          </div>
+          <p><code>@import</code> composes independently managed behaviours on each element, complete with local refs, queries, watches, signals and cleanup.</p>
+        </div>
 
-    <!-- Keyboard Events -->
-    <div class="card" @data="{ lastKey: 'Press a key...' }">
-      <h2>Keyboard Events</h2>
-      <input placeholder="Type here..." @keydown="lastKey = $event.key" @keydown.enter="lastKey = 'ENTER pressed!'" @keydown.esc="lastKey = 'Escaped!'">
-      <div class="keyboard-display" @text="lastKey">Press a key...</div>
-    </div>
+        <div class="grid">
+          <article class="card half dark">
+            <span class="feature-label">@import="disclosure,disclosure-meter"</span>
+            <h3>One behaviour, reused twice</h3>
+            <p>Both modules run independently on each disclosure. Try Escape or click outside an open panel.</p>
 
-    <!-- Debounced Input -->
-    <div class="card">
-      <h2>Debounced Input</h2>
-      <p>Type and wait 500ms to see the debounced value update.</p>
-      <input placeholder="Search..." @bind="search" @input.debounce:500="debouncedSearch = search">
-      <p>Immediate: <b @text="search || '(empty)'"></b></p>
-      <p>Debounced: <b @text="debouncedSearch || '(empty)'"></b></p>
-    </div>
+            <div class="demo-box">
+              <section class="disclosure" @data="{ open: false, transitions: 0 }" @import="disclosure,disclosure-meter">
+                <button class="button disclosure-trigger" @ref="trigger" @click="open = !open">
+                  Why not a controller?
+                  <span @text="open ? '−' : '+'">+</span>
+                </button>
+                <div class="disclosure-panel" @ref="panel" @visible="open">
+                  Inline state still owns the simple toggle. The imported module adds outside-click, Escape, ARIA and cleanup.
+                </div>
+                <small class="muted"><b @text="transitions">0</b> observed transitions</small>
+              </section>
 
-    <!-- Tabs -->
-    <div class="card" @data="{ tab: 'one' }">
-      <h2>Tabs</h2>
-      <div class="tabs">
-        <button class="tab" :class="{ active: tab == 'one' }" @click="tab = 'one'">Tab 1</button>
-        <button class="tab" :class="{ active: tab == 'two' }" @click="tab = 'two'">Tab 2</button>
-        <button class="tab" :class="{ active: tab == 'three' }" @click="tab = 'three'">Tab 3</button>
-      </div>
-      <div class="tab-content" @visible="tab == 'one'">Content for Tab 1</div>
-      <div class="tab-content" @visible="tab == 'two'">Content for Tab 2</div>
-      <div class="tab-content" @visible="tab == 'three'">Content for Tab 3</div>
-    </div>
+              <section class="disclosure" @data="{ open: false, transitions: 0 }" @import="disclosure,disclosure-meter">
+                <button class="button disclosure-trigger" @ref="trigger" @click="open = !open">
+                  Is it independently scoped?
+                  <span @text="open ? '−' : '+'">+</span>
+                </button>
+                <div class="disclosure-panel" @ref="panel" @visible="open">
+                  Yes. The same state names, refs and behaviours can be reused without collisions.
+                </div>
+                <small class="muted"><b @text="transitions">0</b> observed transitions</small>
+              </section>
+            </div>
+          </article>
 
-    <!-- Element References -->
-    <div class="card">
-      <h2>Element References</h2>
-      <input @ref="myInput" placeholder="Focus me!">
-      <div class="button-group">
-        <button @click="$myInput.focus()">Focus Input</button>
-        <button @click="$myInput.value = 'Hello!'">Set Value</button>
-        <button @click="$myInput.value = ''">Clear</button>
-      </div>
-    </div>
+          <article class="card half tint-blue" @data="{
+            people: [{ id: 1, name: 'Mina' }, { id: 2, name: 'Owen' }],
+            nextPerson: 3, refCount: 0, refChange: 'Waiting for refs…'
+          }" @import="ref-roster">
+            <span class="feature-label">observable refs · watch()</span>
+            <h3>The behaviour can watch the DOM</h3>
+            <p>Each keyed row registers <code>@ref="member"</code>. The imported behaviour receives stable arrays and previous values.</p>
+            <div class="cluster">
+              <button class="button small" @click="people = [...people, { id: nextPerson, name: 'Guest ' + nextPerson++ }]">Connect person</button>
+              <button class="button soft small" @click="people.length && (people = people.slice(0, -1))">Disconnect</button>
+            </div>
+            <ul class="ref-list">
+              <template @for="person in people" :key="person.id">
+                <li class="task" @ref="member">
+                  <span class="dot live"></span>
+                  <span @text="person.name"></span>
+                  <small class="muted" @text="'#' + person.id"></small>
+                </li>
+              </template>
+            </ul>
+            <p class="pill" style="margin: 14px 0 0"><b @text="refCount">0</b>&nbsp; refs · <span @text="refChange"></span></p>
+          </article>
+        </div>
+      </section>
 
-    <!-- Emoji Picker -->
-    <div class="card" @data="{ emoji: '' }">
-      <h2>Emoji Picker</h2>
-      <div class="emoji-picker">
-        <button class="emoji-btn" @click="emoji = '😀'">😀</button>
-        <button class="emoji-btn" @click="emoji = '🎉'">🎉</button>
-        <button class="emoji-btn" @click="emoji = '🚀'">🚀</button>
-        <button class="emoji-btn" @click="emoji = '💡'">💡</button>
-        <button class="emoji-btn" @click="emoji = '🎈'">🎈</button>
-        <button class="emoji-btn" @click="emoji = '❤️'">❤️</button>
-      </div>
-      <div class="selected-emoji" @text="emoji || 'Pick one!'">Pick one!</div>
-    </div>
+      <section aria-labelledby="lifecycle-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">The lifecycle layer</p>
+            <h2 id="lifecycle-title">DOM changes without loose ends.</h2>
+          </div>
+          <p>Structural output owns its listeners and setup. Removing it aborts signals, cancels work and runs cleanup—even when async setup resolves late.</p>
+        </div>
 
-    <!-- Calculator -->
-    <div class="card" @data="{ a: 10, b: 5, op: '+' }">
-      <h2>Calculator</h2>
-      <input type="number" @bind="a" placeholder="First number">
-      <select @bind="op">
-        <option value="+">+</option>
-        <option value="-">-</option>
-        <option value="*">×</option>
-        <option value="/">÷</option>
-      </select>
-      <input type="number" @bind="b" placeholder="Second number">
-      <span @calculate:result="op === '+' ? a + b : op === '-' ? a - b : op === '*' ? a * b : op === '/' ? a / b : 0"></span>
-      <p style="font-size: 1.5rem; text-align: center;">
-        <span @text="a">10</span>
-        <span @text="op">+</span>
-        <span @text="b">5</span>
-        = <b @text="result">15</b>
-      </p>
-    </div>
+        <div class="grid">
+          <article class="card half tint-lime" @data="{ monitoring: true, ticks: 0, cleanups: 0 }">
+            <span class="feature-label">@if · async @init · AbortSignal</span>
+            <div class="split">
+              <div>
+                <h3>An abortable monitor</h3>
+                <p class="muted">Toggle quickly to exercise safe late cleanup.</p>
+              </div>
+              <button class="button small" @click="monitoring = !monitoring" @text="monitoring ? 'Stop' : 'Start'">Stop</button>
+            </div>
+            <template @if="monitoring">
+              <div class="monitor" @init:clock="connectClock($el, $data, $signal)">
+                <div>
+                  <div class="pulse"></div>
+                  <strong @text="ticks">0</strong>
+                  lifecycle ticks
+                </div>
+              </div>
+            </template>
+            <p class="pill" style="margin: 14px 0 0"><b @text="cleanups">0</b>&nbsp; completed cleanups</p>
+          </article>
 
-    <!-- Character Counter -->
-    <div class="card" @data="{ maxLength: 100 }">
-      <h2>Character Counter</h2>
-      <textarea @bind="text" placeholder="Type something..." rows="3"></textarea>
-      <span @calculate:remaining="maxLength - text.length"></span>
-      <p :style="{ color: remaining < 20 ? 'red' : 'inherit' }">
-        <b @text="remaining">100</b> characters remaining
-      </p>
-    </div>
+          <article class="card half" @data="{ score: 0, actionIndex: 0, actionLabel: '+1 point' }">
+            <span class="feature-label">dynamic directive reconciliation</span>
+            <h3>Replace behaviour on a retained element</h3>
+            <p>The pale button stays in the DOM while its <code>data-he-click</code> expression is replaced and safely reconnected.</p>
+            <div class="demo-box stack">
+              <div class="split">
+                <span>Score</span>
+                <strong style="font-size: 2rem" @text="score">0</strong>
+              </div>
+              <button class="button" @ref="action" data-he-click="score += 1" @text="actionLabel">+1 point</button>
+              <button class="button secondary small" @click="cycleDirective($action, $data)">Change that button’s action</button>
+            </div>
+          </article>
 
-    <!-- Password Strength (uses @import) -->
-    <div class="card" @import="https://codepen.io/daz4126/pen/xbOzGNO.js">
-      <h2>Password Strength</h2>
-      <input type="password" @bind="password" placeholder="Enter password">
-      <span @calculate:result="checkStrength(password)"></span>
-      <span @calculate:tips="getPasswordTips(password)"></span>
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: result.percent + '%', background: strengthColor(result.label) }"></div>
-      </div>
-      <p>Strength: <b @text="result.label"></b></p>
-      <p style="font-size: 0.85rem; color: #666;" @text="tips.join(' • ')"></p>
-    </div>
+          <article class="card full">
+            <span class="feature-label">HTTP · cancellation · validation · SSE</span>
+            <div class="split" style="align-items: flex-start">
+              <div>
+                <h3>Server interactions are part of the runtime</h3>
+                <p class="muted">Helium can replace the small request wrapper too: loading states, cancellation, errors, CSRF, response hooks and optional SSE.</p>
+              </div>
+              <div class="button-row">
+                <a class="button" href="validation.html">Open request lifecycle</a>
+                <a class="button secondary" href="sse-demo.html">Open SSE stream</a>
+                <a class="button secondary" href="todo.html">Open TodoMVC</a>
+                <a class="button secondary" href="test-password.html">Imported utilities</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
 
-    <!-- Init Example -->
-    <div class="card">
-      <h2>Init Example</h2>
-      <p @init="loadTime = new Date().toLocaleTimeString()">
-        Page loaded at: <b @text="loadTime"></b>
-      </p>
-      <button @click="loadTime = new Date().toLocaleTimeString()">Update Time</button>
-    </div>
-
-    <!-- Effect Example -->
-    <div class="card" @data="{ history: [] }">
-      <h2>Effect (Side Effects)</h2>
-      <p>Click the button and watch the history build up.</p>
-      <button @click="clicks++">Click Me</button>
-      <span @effect="clicks > 0 ? history.push('Click #' + clicks) : null"></span>
-      <p>Clicks: <b @text="clicks">0</b></p>
-      <p>History: <span @text="history.join(', ') || 'None yet'">None yet</span></p>
-    </div>
-
+    <footer class="footer">
+      <span>Helium keeps the common case in HTML and gives complex behaviour a real lifecycle.</span>
+      <a href="index-lite.html">See what fits in Lite’s 2.60 KB →</a>
+    </footer>
   </div>
 
-<!-- AJAX Examples Section -->
-<div class="page" style="margin-top: 2rem;" @data="{
-  templates: {
-    post: data => `<section class='post'><h1>${data?.title || 'Loading...'}</h1><p>${data?.body || ''}</p></section>`
-  }
-}">
-  <h1>AJAX Examples</h1>
-
-  <div class="examples">
-
-    <!-- HTML Response -->
-    <section class="card">
-      <h2>HTML Response</h2>
-      <div id="table"><p>Click to fetch an HTML table from the server.</p></div>
-      <button @get.once="https://html-mock.fly.dev/tag/table" @target="#table" @loading="<p>Loading table...</p>">Get HTML Table</button>
-    </section>
-
-    <!-- Request Methods -->
-    <section class="card">
-      <h2>Request Methods</h2>
-      <p>PUT adds to account, DELETE (shift+click) removes.</p>
-      <div class="button-group">
-        <button @put="https://html-mock.fly.dev/tag/paragraph" @loading="<span>Adding...</span>" @params="{cash: 100}" @target="put_response">PUT - Add Funds</button>
-        <button @delete.shift="https://html-mock.fly.dev/tag/paragraph" @params="{account: 1}" @target="delete_response">DELETE (Shift+Click)</button>
-      </div>
-      <div @html="put_response" class="response blue">PUT response will appear here</div>
-      <div @html="delete_response" class="response red">DELETE response will appear here</div>
-    </section>
-
-    <!-- Posts with JSON -->
-    <section @ref="posts" class="card">
-      <h2>Posts (JSON + Template)</h2>
-      <p>Fetch posts and render them using a template function.</p>
-      <form @ref="form" class="form">
-        <label><span>Title:</span><input type="hidden" name="userId" value="5"><input name="title" placeholder="Post title"></label>
-        <label><span>Body:</span><textarea name="body" rows="2" placeholder="Post content"></textarea></label>
-        <button @post.prevent="https://dummyjson.com/posts/add" @params="new FormData($form)" @target="$posts:append" @template="templates.post" @loading="templates.post({title: 'Saving...', body: 'Please wait'})">Create Post</button>
-      </form>
-      <div class="button-group" style="margin-top: 1rem;">
-        <button @get.debounce:500="https://dummyjson.com/posts/1" @target="$posts:append" @template="templates.post" @loading="<p>Loading post...</p>">Get Post #1</button>
-        <button @get.debounce:500="https://dummyjson.com/posts/2" @target="$posts:append" @template="templates.post" @loading="<p>Loading post...</p>">Get Post #2</button>
-      </div>
-    </section>
-
-  </div>
-</div>
-</div>
-
-<script type="module" src="../helium-csp.js"></script>
-
+  <script type="module" src="../helium.js"></script>
 </body>
 </html>

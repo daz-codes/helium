@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Helium request cancellation, validation, loading, success, and error lifecycle example.">
+  <title>Helium — request lifecycle</title>
+  <link rel="stylesheet" href="showcase.css">
+  <script src="file-warning.js" defer></script>
+  <style>
+    .request-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .72fr); gap: 18px; }
+    .request-form { padding: clamp(22px, 4vw, 38px); }
+    .request-form input[aria-invalid="true"] { border-color: #a53e32; box-shadow: 0 0 0 3px rgba(165, 62, 50, .12); }
+    .field-error { min-height: 1.25em; margin: 0; color: #98362b; font-size: .8rem; }
+    .request-status { position: sticky; top: 18px; align-self: start; }
+    .request-status output { display: block; margin: 18px 0; font-size: clamp(1.8rem, 5vw, 3.4rem); font-weight: 800; letter-spacing: -.06em; }
+    .response-box { min-height: 92px; padding: 16px; border: 1px dashed #aab3aa; border-radius: 14px; background: rgba(255,255,255,.58); }
+    .scenario { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid rgba(23,33,27,.1); }
+    .scenario:last-child { border-bottom: 0; }
+    .scenario code { margin-top: 2px; }
+    @media (max-width: 760px) { .request-layout { grid-template-columns: 1fr; } .request-status { position: static; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="site-nav" aria-label="Example navigation">
+      <a class="brand" href="index.html"><span class="brand-mark">He</span> Helium examples</a>
+      <div class="nav-links">
+        <a href="index.html">Standard</a>
+        <a href="index-lite.html">Lite</a>
+        <a href="todo.html">Todo</a>
+        <a href="validation.html" aria-current="page">Requests</a>
+        <a href="sse-demo.html">SSE</a>
+      </div>
+    </nav>
+
+    <main data-helium>
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">HTTP without another request wrapper</p>
+          <h1>Errors belong in the <strong>same view.</strong></h1>
+          <p>Helium owns submission, loading content, cancellation, response hooks and field errors while the browser keeps its native validation.</p>
+        </div>
+        <div class="hero-demo">
+          <span class="feature-label">@post · @loading · @success · @error</span>
+          <p>Submit twice quickly to supersede the first request. The old transaction is aborted and cannot overwrite the newer result.</p>
+        </div>
+      </header>
+
+      <section aria-labelledby="request-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">A complete request lifecycle</p>
+            <h2 id="request-title">Try every path.</h2>
+          </div>
+          <p>The server below is simulated so this file works from the example server. The Helium request path itself is real.</p>
+        </div>
+
+        <div class="request-layout">
+          <section class="card full request-form">
+            <span class="feature-label">native validation · 422 mapping · retry</span>
+            <h3>Edit profile</h3>
+            <p class="muted">Use one of the sample emails, or enter any other valid address for success.</p>
+
+            <form
+              class="stack"
+              @ref="form"
+              @post.prevent="/profile"
+              @params="new FormData($el)"
+              @target="#server-response"
+              @loading="loadingMarkup"
+              @success="saveSucceeded($response)"
+              @error="saveFailed($error, $request)"
+            >
+              <label for="name">Name
+                <input id="name" name="name" value="Maya Chen" required minlength="2" autocomplete="name" aria-describedby="name-error" :aria-invalid="!!errors.name" @input="clearError('name')">
+              </label>
+              <p id="name-error" class="field-error" @text="errors.name || ''"></p>
+
+              <label for="email">Email
+                <input id="email" name="email" type="email" value="hello@example.com" required autocomplete="email" aria-describedby="email-error" :aria-invalid="!!errors.email" @input="clearError('email')">
+              </label>
+              <p id="email-error" class="field-error" @text="errors.email || ''"></p>
+
+              <div class="button-row">
+                <button class="button" type="submit">Save profile</button>
+                <button type="button" class="button secondary" @hidden="!canRetry" @click="$form.requestSubmit()">Retry request</button>
+              </div>
+            </form>
+
+            <div id="server-response" class="response-box" style="margin-top: 20px"><p>No changes saved yet.</p></div>
+          </section>
+
+          <aside class="card full tint-blue request-status">
+            <span class="feature-label">live status</span>
+            <small class="muted">Current request state</small>
+            <output role="status" aria-live="polite" @text="status">Ready to save.</output>
+            <div class="stack">
+              <div class="scenario"><code>200</code><span>Any valid email saves successfully.</span></div>
+              <div class="scenario"><code>422</code><span><button class="button soft small" @click="($form.email.value = 'taken@example.com', $form.email.dispatchEvent(new Event('input', { bubbles: true })))">Use taken email</button></span></div>
+              <div class="scenario"><code>offline</code><span><button class="button soft small" @click="($form.email.value = 'network@example.com', $form.email.dispatchEvent(new Event('input', { bubbles: true })))">Use network failure</button></span></div>
+              <div class="scenario"><code>abort</code><span>Press Save twice before the loading state finishes.</span></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>The request helper stays in Standard because it can replace Rails request.js.</span>
+      <a href="index.html">Back to Standard examples →</a>
+    </footer>
+  </div>
+
+  <script type="module">
+    import { createHelium } from "../helium.js"
+
+    const demoFetch = async (_url, options) => {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 650)
+        options.signal.addEventListener("abort", () => {
+          clearTimeout(timer)
+          reject(options.signal.reason)
+        }, { once: true })
+      })
+
+      const email = options.body.get("email")
+      if (email === "network@example.com") throw new TypeError("The demo network is unavailable")
+      if (email === "taken@example.com") {
+        return new Response(JSON.stringify({ errors: { email: "That email address is already registered." } }), {
+          status: 422,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      return new Response("<p><strong>Saved.</strong> The server accepted the profile.</p>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      })
+    }
+
+    window.fetch = demoFetch
+
+    const app = createHelium({
+      root: "[data-helium]",
+      handleError(error, context) {
+        console.info("Request failed", error, context)
+      },
+    })
+
+    let data
+    data = await app.helium({
+      errors: {},
+      status: "Ready to save.",
+      canRetry: false,
+      loadingMarkup: '<p role="status"><strong>Saving…</strong> The previous content will return if this request fails.</p>',
+      clearError(field) {
+        if (!data.errors[field]) return
+        data.errors = { ...data.errors, [field]: "" }
+      },
+      saveSucceeded() {
+        data.errors = {}
+        data.canRetry = false
+        data.status = "Profile saved"
+      },
+      async saveFailed(error, request) {
+        data.canRetry = true
+        if (error.status === 422) {
+          const payload = await request.response.json()
+          data.errors = payload.errors || {}
+          data.status = "Correct the highlighted field"
+          document.getElementById(Object.keys(data.errors)[0])?.focus()
+          return
+        }
+        data.status = `${error.message}. Retry when ready.`
+      },
+    })
+  </script>
+</body>
+</html>

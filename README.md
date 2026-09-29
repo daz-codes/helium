@@ -12,20 +12,33 @@ Here's a simple example of a button that counts the number of times it has been 
 
 It's really simple to use - just sprinkle the magic @attributes into your HTML and watch it come alive!
 
-[See more examples here](https://codepen.io/daz4126/pen/ogxGMX) | [TodoMVC Example](https://codepen.io/daz4126/pen/gbMjdZO)
+[Explore the Standard showcase](examples/index.html) |
+[See exactly what Lite can do](examples/index-lite.html) |
+[Open the persistent Todo example](examples/todo.html)
+
+The examples use browser modules, so serve them over HTTP rather than opening
+the HTML files directly with a `file://` URL:
+
+```bash
+npm run examples
+```
+
+Then open <http://127.0.0.1:3456/examples/index.html>. The same server powers
+the SSE examples and their `/api/*` demo endpoints.
 
 ## Why Helium?
 
 Helium is designed for developers who want:
 
-- **Lightweight** - About 6.2–14.2KB minified and gzipped, depending on the build
+- **Lightweight** - From 2.6KB minified and gzipped for Lite
 - **Powerful** - Declarative JavaScript in your HTML
 - **Zero build step** - Works directly in the browser with no compiling
 - **Easy to learn** - If you know HTML and basic JavaScript, you're ready
 
 ## Versions
 
-Helium comes in three core versions, with SSE available as an optional add-on, so you can pick the right balance of features and size for your project:
+Helium comes in three core versions. Turbo navigation and SSE are optional
+add-ons, so applications only ship the integration code they use:
 
 ### Helium (Standard)
 
@@ -35,8 +48,7 @@ The full-featured version with everything included.
 - Event handlers with modifiers
 - HTTP requests (`@get`, `@post`, `@put`, `@patch`, `@delete`)
 - Module imports (`@import`)
-- Optional Server-Sent Events (SSE) add-on
-- Turbo/Hotwire integration
+- Optional Turbo/Hotwire and Server-Sent Events (SSE) add-ons
 
 **Best for:** Most projects where you want the full power of Helium without worrying about CSP restrictions.
 
@@ -46,12 +58,16 @@ import helium from "@daz4126/helium"
 
 ### Helium Lite
 
-A slimmed-down version with just the core reactivity features.
+A deliberately small, standalone runtime for common view interactions.
 
-- Core directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@calculate`, `@effect`, `@init`)
-- Event handlers with modifiers
+- Core directives (`@text`, `@html`, `@bind`, `@data`, `@ref`, `@init`,
+  `@hidden`, `@visible`, and dynamic `:attributes`)
+- Element event handlers with common key, `.prevent`, `.stop`, `.self`, `.once`,
+  `.capture`, and `.passive` modifiers
 - One global state namespace
-- No local `@data`, keyed `@for`, HTTP requests, imports, SSE, or Turbo integration
+- Synchronous setup/cleanup returned by `@init`
+- No factories/multiple mounts, local `@data`, `@for`, `@if`, `@calculate`,
+  `@effect`, HTTP, imports, advanced event routing, SSE, or Turbo integration
 
 **Best for:** Simple interactive pages where you only need reactivity and don't need server communication or module imports.
 
@@ -63,8 +79,8 @@ import helium from "@daz4126/helium/lite"
 
 A Content Security Policy safe version that doesn't require `unsafe-eval`. It uses [jexpr](https://github.com/nicolo-ribaudo/jexpr) as its expression engine instead of `new Function()`.
 
-- All the same directives and HTTP/Turbo/`@import` features as the standard version
-- Optional Server-Sent Events (SSE) add-on
+- All the same directives, HTTP, and `@import` features as the standard version
+- Optional Turbo/Hotwire and Server-Sent Events (SSE) add-ons
 - `&&` / `||` / `??` short-circuit correctly, and optional chaining (`a?.b`) is supported
 - CSP-compliant — no `unsafe-eval` needed
 
@@ -103,7 +119,8 @@ import helium from "@daz4126/helium/csp"
 
 | Feature | Standard | Lite | CSP |
 |---------|----------|------|-----|
-| Core directives | ✅ | ✅ | ✅ |
+| Core bindings, state and events | ✅ | ✅ | ✅ |
+| Multiple roots / factories | ✅ | ❌ | ✅ |
 | Element-local `@data` | ✅ | ❌ | ✅ |
 | Keyed `@for` | ✅ | ❌ | ✅ |
 | Conditional `@if` | ✅ | ❌ | ✅ |
@@ -111,18 +128,21 @@ import helium from "@daz4126/helium/csp"
 | HTTP requests | ✅ | ❌ | ✅ |
 | `@import` | ✅ | ❌ | ✅ |
 | SSE | Add-on | ❌ | Add-on |
-| Turbo integration | ✅ | ❌ | ✅ |
+| Turbo navigation lifecycle | Add-on | ❌ | Add-on |
 | CSP safe | ❌ | ❌ | ✅ |
-| Approx. min+gzip size | 9.62KB | 6.18KB | 13.75KB |
+| Approx. min+gzip size | 13.21KB | 2.60KB | 17.35KB |
 
 Sizes are enforced against the production Terser builds with gzip level 9. The
-CSP figure includes its expression parser. Adding SSE produces 10.00KB Standard
-and 14.12KB CSP bundles.
+CSP figure includes its expression parser. Turbo adds about 0.9–1.0KB (14.12KB
+Standard, 18.35KB CSP); SSE produces 13.70KB Standard and 17.77KB CSP bundles. Combined Turbo+SSE builds are also
+provided.
 
-Lite is generated from the same global-state reactive core as Standard. It has
-identical deep/shared reactivity, lifecycle, binding, and cleanup behavior for
-root state, but intentionally excludes element-local data and Standard's other
-extensions.
+Lite is intentionally independent from Standard rather than generated by
+stripping the full runtime. It keeps nested reactive state, batched bindings,
+two-way form values, basic events, singular refs, synchronous initializer
+cleanup, and discovery of newly inserted elements. Standard/CSP provide the
+richer lifecycle and composition contract. The rest of this README describes
+Standard/CSP unless a section explicitly includes Lite.
 
 ## Installation
 
@@ -150,6 +170,11 @@ Just import from the CDN in a script tag directly in your HTML page:
 <script type="module">
   import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium-sse.js';
 </script>
+
+<!-- Standard + Turbo -->
+<script type="module">
+  import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium-turbo.js';
+</script>
 ```
 
 ### NPM
@@ -165,7 +190,11 @@ import helium from "@daz4126/helium"         // Standard
 import helium from "@daz4126/helium/lite"    // Lite
 import helium from "@daz4126/helium/csp"     // CSP
 import helium from "@daz4126/helium/sse"     // Standard + SSE
+import helium from "@daz4126/helium/turbo"   // Standard + Turbo
+import helium from "@daz4126/helium/turbo/sse" // Standard + Turbo + SSE
 import helium from "@daz4126/helium/csp/sse" // CSP + SSE
+import helium from "@daz4126/helium/csp/turbo" // CSP + Turbo
+import helium from "@daz4126/helium/csp/turbo/sse" // CSP + Turbo + SSE
 ```
 
 For a pre-minified, self-contained bundle, append `/min` to an entry point:
@@ -173,10 +202,17 @@ For a pre-minified, self-contained bundle, append `/min` to an entry point:
 ```javascript
 import helium from "@daz4126/helium/min"
 import helium from "@daz4126/helium/sse/min"
+import helium from "@daz4126/helium/turbo/min"
 ```
 
 The source entry points remain browser-ready ES modules, so consuming Helium
 does not require a build step.
+
+Helium ships TypeScript declarations for every source and `/min` entry point.
+They cover Lite's compact entry point plus Standard/CSP mounting, factories and
+expression engines, lifecycle errors,
+managed `@import` behaviors, signals, `watch()`, HTTP/SSE, and CSP globals. No
+separate `@types` package is needed.
 
 ### Automatic Initialization
 
@@ -211,7 +247,16 @@ a.unmount()     // Safe to call more than once
 Explicit roots have independent state, bindings, observers, listeners, refs,
 and cleanup. Calling `mount()` suppresses the pending automatic initialization;
 existing single-root pages can continue relying on auto-initialization or
-calling `helium(initialState)` directly.
+calling `helium(initialState)` directly. If an external DOM owner disconnects
+the mounted root (or a connected ancestor), Helium automatically performs the
+same teardown. Moving the root synchronously between connected parents keeps
+the instance alive. A root marked `data-turbo-permanent` also survives Turbo's
+temporary parking step; if Turbo never reconnects it, Helium still tears it
+down on the next task.
+
+Explicit mounts and `createHelium()` are Standard/CSP features. Lite owns one
+automatically selected root; use Standard when independent component roots or
+instance configuration are required.
 
 ## Helium Attributes
 
@@ -250,7 +295,10 @@ You can also use expressions. This will update the textContent of the element wi
 
 ### @html
 
-Similar to `@text`, but inserts HTML content into the element's innerHTML. Supports arrays, objects, and DOM morphing with Idiomorph if available.
+Similar to `@text`, but inserts HTML content into the element's innerHTML.
+Supports arrays, objects, and DOM morphing through Turbo or a standalone
+Idiomorph global when available in Standard/CSP. Lite always uses native
+`innerHTML` and then initializes directives in newly inserted elements.
 
 ```html
 <div @html="'<strong>Bold text</strong>'"></div>
@@ -463,7 +511,7 @@ their target names in local `@data` when they should be local. Inside the
 subtree, `$data` is the scoped state view. Local values are not returned from
 `helium()` and are not included in root `@local-storage` persistence.
 
-**Alias:** `data-he-data` (the legacy bare `data-he` alias is also accepted)
+**Alias:** `data-he-data`
 
 ### @ref
 
@@ -482,9 +530,9 @@ always-array `$refs.name` in current DOM order:
 
 Ref lookup starts in the nearest explicit `@data` scope and falls back through
 parent scopes. A ref with the same name in a nested scope shadows the outer
-name. Lite has one root scope, so all of its refs belong to the mounted root.
-When refs are removed or reordered, singular and plural lookup follows the
-current DOM.
+name. Lite has one root scope and singular refs only: `$name` and `$refs.name`
+both refer to the current element. Standard/CSP plural lookup follows current
+DOM order when refs are removed or reordered.
 
 This element can be accessed in other JavaScript expressions as `$list`:
 
@@ -496,14 +544,23 @@ This element can be accessed in other JavaScript expressions as `$list`:
 
 ### @init
 
-A JavaScript expression that will run once when Helium initializes. Useful for setup code that should run on page load.
+A JavaScript expression that runs after the element's refs and bindings have
+been registered. Use it for imperative setup that does not belong in a normal
+reactive binding.
 
 ```html
 <div @init="timestamp = Date.now()"></div>
 <div @init="console.log('Helium initialized!')"></div>
 ```
 
-If the expression returns a function, Helium calls it when the element is removed or when Helium is torn down. This is useful for releasing timers, observers, subscriptions, and other resources:
+If the expression returns a function, Helium owns that cleanup and calls it
+when the initializer attribute is replaced or removed, the element is removed,
+or the Helium root is unmounted. This is useful for timers, observers,
+subscriptions, and third-party widgets:
+
+Lite supports this synchronous setup/cleanup convention. Namespaced
+initializers, `AbortSignal`, asynchronous setup/cleanup, lifecycle modules, and
+managed errors in the sections below require Standard or CSP.
 
 ```html
 <div @init="start_clock($el, $data)"></div>
@@ -519,7 +576,132 @@ function start_clock(element, data) {
 }
 ```
 
-**Alias:** `data-he-init`
+#### Lifecycle modules
+
+For behavior too complex to keep inline, give an imported module a default
+setup export. The element's `@import` is then both the declaration and the
+lifecycle owner—there is no second initializer expression to repeat:
+
+```html
+<section
+  @import="feature"
+  @data="{ enabled: true }"
+>
+  <button @ref="toggle">Toggle</button>
+</section>
+```
+
+```js
+// feature.js
+export default function connectFeature({ element, data, refs, signal }) {
+  // Each refs.toggle read returns the current behavior-local array
+  const toggle = refs.toggle[0]
+  const listener = () => { data.enabled = !data.enabled }
+  toggle.addEventListener("click", listener, { signal })
+
+  return () => stopThirdPartyWidget(element)
+}
+```
+
+The default export runs separately for every importing element, so its local
+variables form a private per-element instance. Returning cleanup is the
+lifecycle contract; Helium does not require a controller class or registry.
+See [`@import`](#import) for its complete context and composition rules.
+
+Named setup exports plus `@init` remain useful when the setup arguments or
+activation expression should be explicit:
+
+```html
+<section @import="feature" @init:feature="connectFeature($el, $data, $refs)"></section>
+```
+
+```js
+export function connectFeature(element, data, refs) {
+  return () => { /* cleanup */ }
+}
+```
+
+#### Namespaced initializers
+
+Use `@init:name` when one element owns multiple independent lifecycle modules:
+
+```html
+<div
+  @init:editor="connectEditor($el, $data, $refs)"
+  @init:tooltip="connectTooltip($el)"
+></div>
+```
+
+Each complete attribute name has an independent setup and cleanup lifecycle.
+Replacing or removing `@init:tooltip` cleans up only the tooltip; removing the
+element or unmounting its root cleans up both. Names are labels for lifecycle
+ownership, not behavior registries, and may use letters, numbers, `_`, and `-`.
+
+#### Cancellation and asynchronous lifecycle
+
+Every initializer receives its own `AbortSignal` as `$signal`. Pass it to a
+lifecycle module and use native signal-aware APIs where possible:
+
+```html
+<div @init:search="connectSearch($el, $data, $signal)"></div>
+```
+
+```js
+export async function connectSearch(element, data, signal) {
+  const response = await fetch("/search-index", { signal })
+  const index = await response.json()
+  const search = () => { data.results = index.search(element.value) }
+  element.addEventListener("input", search, { signal })
+
+  return async () => {
+    await index.close()
+  }
+}
+```
+
+The signal aborts before cleanup when the complete initializer attribute—or an
+individual lifecycle import—is replaced or removed, its element disconnects,
+or its Helium root unmounts. Namespaced initializers and imported behaviors on
+the same element receive different signals.
+
+Setup may return cleanup directly or return a promise that resolves to cleanup.
+Helium does not delay mounting while setup promises settle. If an initializer
+disconnects first, its signal aborts immediately and any cleanup returned later
+runs immediately instead of being attached to a stale element. Cleanup may also
+return a promise; Helium observes it and reports rejection, while teardown
+itself remains synchronous. An `AbortError` caused by Helium aborting that
+initializer's signal is treated as expected cancellation.
+
+#### Lifecycle errors
+
+`createHelium()` accepts an instance-level error hook and optional debug mode:
+
+```js
+import { createHelium } from "@daz4126/helium"
+
+const app = createHelium({
+  root: "#app",
+  handleError(error, context) {
+    reportToService(error, context)
+  },
+  debug: true,
+})
+
+await app.helium({ count: 0 })
+app.heliumTeardown()
+```
+
+`context.phase` is `setup`, `cleanup`, `watch`, `binding`, `event`, `import`, or
+`request`. Context also includes the root and, where relevant, `element`,
+`directive`, `expression`, initializer `signal`, DOM `event`, import `path`, or
+request `method` and `url`. With no hook Helium reports failures to the console.
+With a hook, errors go to the hook; `debug: true` additionally prints the error
+and full context. CSP exports `createCSPHelium()` with the same options. Lite
+does not expose a configurable factory or lifecycle error hook.
+
+**Aliases:** `data-he-init` and namespaced forms such as
+`data-he-init:tooltip`. Use the `data-he-*` form for programmatic attribute
+changes because `setAttribute()` may reject names beginning with `@`.
 
 ### @calculate
 
@@ -589,7 +771,12 @@ Runs a side effect whenever specified dependencies change. Use `:*` to run on an
 
 ### @import
 
-Imports ES modules into Helium's scope, making their exports available in Helium expressions.
+`@import` has two complementary roles:
+
+1. Every named module export is added to the mounted Helium state and becomes
+   available to expressions.
+2. If the module has a default function export, Helium runs it once per
+   importing element as a managed behavior setup function.
 
 ```html
 <div @import="utils,api">
@@ -598,7 +785,156 @@ Imports ES modules into Helium's scope, making their exports available in Helium
 </div>
 ```
 
-This dynamically imports modules and adds all their named exports to Helium's state.
+Modules are cached by resolved URL within the mounted instance, while default
+setup is still run independently for every importing element.
+
+#### Managed behavior setup
+
+```html
+<div @import="dropdown" @data="{ open: false }">
+  <button @ref="trigger">Menu</button>
+  <div role="menu" @ref="panel" @hidden="!open">...</div>
+</div>
+```
+
+```js
+// dropdown.js
+export default function connectDropdown(context) {
+  const { element, data, refs, query, signal, dispatch } = context
+  const trigger = refs.trigger[0]
+
+  trigger.addEventListener("keydown", event => {
+    if (event.key === "Escape") data.open = false
+  }, { signal })
+
+  const widget = enhanceMenu(query("[role=menu]"))
+  dispatch("dropdown:connected", { widget })
+
+  return () => widget.destroy()
+}
+```
+
+The context contains:
+
+| Property | Meaning |
+|----------|---------|
+| `element` | The element carrying this `@import` |
+| `root` | This Helium instance's mounted root |
+| `scope` | The behavior's owning element (the local query/ref boundary) |
+| `data` | Reactive data visible from the importing element |
+| `refs.name` | The current DOM-ordered array of matching local refs |
+| `query(selector)` | First matching descendant in this behavior |
+| `query.all(selector)` | All matching descendants in this behavior |
+| `watch(selector, callback, options)` | Observe a reactive selection for this behavior |
+| `signal` | This behavior instance's `AbortSignal` |
+| `dispatch(name, detail, options)` | Dispatch a custom event from the element |
+
+Refs and queries do not cross into a nested element that owns its own managed
+import behavior. This gives reusable modules local targets without globally
+unique selectors. `refs.name` is evaluated when read, so it reflects refs that
+connect, disconnect, or reorder after setup; call `query` again to inspect the
+current DOM.
+
+Setup may return cleanup or a promise resolving to cleanup. Its signal aborts
+before cleanup when that module name is removed from the attribute, the whole
+attribute or element is removed, or the mounted root disconnects/unmounts.
+Cleanup and lifecycle errors use the same guarantees and `handleError` hook as
+`@init`.
+
+#### Programmatic watching
+
+Managed behaviors can react to state changed anywhere in their visible data
+scope without adding a separate `@effect` attribute:
+
+```js
+export default function connectMap({ element, data, watch }) {
+  const map = createMap(element)
+
+  watch(
+    () => [data.latitude, data.longitude],
+    ([latitude, longitude], previousPosition) => {
+      map.setCenter(latitude, longitude)
+    },
+    { immediate: true },
+  )
+
+  return () => map.destroy()
+}
+```
+
+`watch(selector, callback, options)` evaluates the selector synchronously and
+tracks the Helium data it reads. The selector may close over `data`, as above,
+or receive it as its argument: `watch(data => data.status, callback)`.
+Conditional selectors retrack their dependencies each time they run.
+
+The callback receives `(current, previous)`. It does not run during setup by
+default, so the first change receives the setup value as `previous`. Set
+`{ immediate: true }` to run it during setup with `previous` equal to
+`undefined`. Synchronous state writes are batched, and callbacks run only when
+the selected result changes according to `Object.is`. Pass a custom
+`{ equals(current, previous) }` function, or `{ equals: false }` to run after
+every tracked invalidation.
+
+```js
+const stop = watch(
+  data => data.status,
+  (status, previousStatus) => {
+    if (previousStatus === "pending" && status === "complete") celebrate()
+  },
+)
+
+stop() // optional early unsubscribe; safe to call repeatedly
+```
+
+Every watcher is also stopped automatically when its imported behavior is
+removed, disconnected, or unmounted. A rejected callback promise is reported
+to `handleError` with phase `watch`. Select the nested value you care about,
+such as `data => data.user.name`; selecting `data.user` observes replacement of
+that object rather than treating every nested mutation as a deep change.
+
+`@effect` remains the HTML-first choice for ordinary declarative side effects.
+It deliberately has no single previous-value magic: an effect may name several
+dependencies, use `:*`, and run after several values change in one batch. Use a
+selector-based `watch()` when previous-value semantics matter.
+
+Ref collections are watchable through the same API, including when the initial
+collection is empty:
+
+```js
+watch(
+  () => refs.item,
+  (items, previousItems = []) => {
+    const connected = items.filter(item => !previousItems.includes(item))
+    const disconnected = previousItems.filter(item => !items.includes(item))
+    connected.forEach(connectItem)
+    disconnected.forEach(disconnectItem)
+  },
+  { immediate: true },
+)
+```
+
+The selector reruns when matching behavior-local refs connect, disconnect, or
+change DOM order. Both arrays are DOM ordered. Unrelated DOM/ref changes are
+suppressed, and nested managed behaviors retain their own ref boundary; if that
+nested behavior is removed, its refs can become visible to the outer watcher.
+This supplies Stimulus-style target connection results without adding separate
+target callback conventions.
+
+#### Composing behaviors
+
+Comma-separated modules are independent behavior instances:
+
+```html
+<input @import="autocomplete,analytics">
+```
+
+Changing that value to `analytics` aborts and cleans up only `autocomplete`.
+`analytics` stays connected and is not set up again. Duplicate module names in
+one attribute are ignored.
+
+Named exports are state imports, not behavior instances, and remain on the
+mounted state if their module name is later removed. Use the default export for
+resources that require lifecycle ownership.
 
 **Import paths:**
 
@@ -612,7 +948,28 @@ This dynamically imports modules and adds all their named exports to Helium's st
 
 The `.js` extension is added automatically if not provided. URLs are used as-is.
 
-**Example:**
+**Import maps (Rails importmap-rails, Propshaft):** a bare name that matches an
+entry in a `<script type="importmap">` on the page — exactly, or through a
+trailing-slash prefix such as `"controllers/"` — is passed to `import()`
+unchanged, so the browser resolves it through the import map. This is what makes
+digested asset URLs work:
+
+```ruby
+# config/importmap.rb
+pin "dropdown", to: "dropdown.js"
+pin_all_from "app/javascript/behaviors", under: "behaviors"
+```
+
+```html
+<div @import="dropdown">...</div>
+<div @import="behaviors/tabs">...</div>
+```
+
+Names without a matching import map entry keep the page-relative resolution
+shown in the table above. Only the page's top-level `imports` are consulted;
+`scopes` are ignored.
+
+#### Named exports
 
 ```javascript
 // utils.js
@@ -638,7 +995,7 @@ export const API_URL = 'https://api.example.com';
 </div>
 ```
 
-**Importing from URLs:**
+#### Importing from URLs
 
 ```html
 <!-- Import from a CDN or GitHub -->
@@ -837,31 +1194,31 @@ Specifies the request parameters. Can be:
 You can write the params in shorthand using `:` separated string of attributes:
 
 ```html
-<!-- Creates { user: { name: [value] } } -->
-<button @post="/api/save" @params="user:name:value" name="value">
-  Save
-</button>
+<!-- Creates { user: { name: [this element's value] } } -->
+<input @post.debounce="/api/save" @params="user:name:value">
 ```
 
-**Magic Parmas Syntax:**
-If the element has a `name` attribute, Helium automatically extracts its value:
+The last segment is the property read from the element itself; the segments
+before it are nesting keys. The value is sent as data and never evaluated.
+
+**Magic Params Syntax:**
+If the element has a `name` attribute and no `@params`, Helium sends the
+element's own value under that name (`user[name]` nests as `{ user: { name } }`):
 
 ```html
-<!-- Automatically sends { username: [input value] } -->
-<input name="username" @bind="username">
-<button @post="/api/save" name="username">Save</button>
+<!-- Sends { username: [input value] } as the user types -->
+<input name="username" @post.debounce="/api/save">
 ```
 
 For checkboxes:
 ```html
 <!-- Sends { agreed: true/false } -->
-<input type="checkbox" name="agreed">
-<button @post="/api/consent" name="agreed">Submit</button>
+<input type="checkbox" name="agreed" @post="/api/consent">
 ```
 
 **FormData Example:**
 ```html
-<form @post="/api/upload">
+<form @post="/api/upload" @params="new FormData($el)">
   <input type="file" name="avatar">
   <input type="text" name="caption">
   <button>Upload</button>
@@ -889,14 +1246,44 @@ Content to show while the request is in progress:
 <button 
   @get="/api/users"
   @target="#list"
-  @loading="<div class='spinner'>Loading...</div>">
+  @loading="loadingMarkup">
   Load Users
 </button>
 ```
 
+If the request fails, is superseded, or is cancelled, Helium restores the
+target content that existed before loading began. A successful response replaces
+the loading content normally.
+
+#### @success and @error
+
+Run an expression after a successful response or a real request failure:
+
+```html
+<form
+  @post="/profile"
+  @params="new FormData($el)"
+  @success="saved($response, $request)"
+  @error="saveFailed($error, $request)"
+>
+  ...
+</form>
+```
+
+`$response` is the parsed JSON/text response value. `$error` includes `status`
+and `response` for a non-successful HTTP status. `$request` contains `method`,
+`url`, `element`, `signal`, the raw `response`, and parsed `data`. The success
+hook runs after the target update. The error hook runs after loading content has
+been restored and may be asynchronous—for example, to read a 422 JSON body.
+
+Cancellation is not an error hook: removing the request element/directive,
+unmounting its Helium root, aborting an external signal, or starting a newer
+request from the same HTTP attribute aborts the old request with `AbortError`
+without calling `@error` or `handleError`.
+
 #### @options
 
-Additional fetch options (as an object):
+Additional fetch and Helium request options (as an object):
 
 ```html
 <button 
@@ -906,12 +1293,30 @@ Additional fetch options (as an object):
 </button>
 ```
 
+Fetch options such as `cache`, `mode`, `headers`, and `credentials` are forwarded
+to `fetch()`. Helium-specific options are:
+
+| Option | Meaning |
+|--------|---------|
+| `signal` | External `AbortSignal` linked to Helium's lifecycle signal |
+| `latest` | Cancel an earlier request with the same `requestKey` |
+| `requestKey` | Identity used by `latest`; HTTP attributes use their full attribute name |
+| `requireCsrf` | Refuse a same-origin POST/PUT/PATCH/DELETE when no CSRF meta token exists |
+| `success(data, request)` | Programmatic success callback |
+| `error(error, request)` | Programmatic failure callback |
+
+HTTP attributes default to `{ latest: true }`, preventing a slow earlier search
+or save from overwriting a newer result. Programmatic helpers allow concurrent
+requests unless `latest` is explicitly enabled.
+
 **Alias:** All HTTP attributes have `data-he-` aliases:
 - `data-he-target`
 - `data-he-params`
 - `data-he-template`
 - `data-he-loading`
 - `data-he-options`
+- `data-he-success`
+- `data-he-error`
 
 ### Server-Sent Events (optional)
 
@@ -942,6 +1347,9 @@ data: Connected
 Set `retryMode` and an optional initial `retry` delay through `@options` to
 reconnect after the stream closes or fails. A server-supplied `retry:` field
 updates the delay and `id:` is sent back as `Last-Event-ID` on reconnection.
+Retries continue at that fixed delay while the request remains mounted and
+current; aborting, unmounting, or superseding the request stops the loop. Helium
+1.0 does not impose an attempt limit or add client-side exponential backoff.
 
 ```html
 <button @get="/api/events"
@@ -954,10 +1362,15 @@ updates the delay and `id:` is sent back as `Last-Event-ID` on reconnection.
 ### Complete Example
 
 ```html
-<form @post="/api/users" @target="#result" @loading="Saving...">
+<form
+  @post="/api/users"
+  @params="{ name: username, email: email }"
+  @target="#result"
+  @loading="'Saving...'"
+>
   <input @bind="username" placeholder="Username">
   <input @bind="email" placeholder="Email">
-  <button @params="{ name: username, email: email }">Create User</button>
+  <button>Create User</button>
 </form>
 
 <div id="result"></div>
@@ -966,7 +1379,7 @@ updates the delay and `id:` is sent back as `Last-Event-ID` on reconnection.
 ### Special Features
 
 - **CSRF Protection:** Automatically includes CSRF tokens from `<meta name="csrf-token">` for same-origin requests
-- **Turbo Streams:** Supports Turbo Stream responses for Rails applications
+- **Turbo Streams:** The `/turbo` adapters advertise and render Turbo Stream responses
 - **Content Type Detection:** Automatically handles JSON and HTML responses
 - **FormData:** Works seamlessly with file uploads and multipart forms
 - **Same-Origin Credentials:** Automatically includes cookies for same-origin requests
@@ -982,6 +1395,54 @@ updates the delay and `id:` is sent back as `Last-Event-ID` on reconnection.
   <button>Submit</button>
 </form>
 ```
+
+Token inclusion is automatic when the meta element exists. To fail closed when
+it is missing, enable validation for an instance or one request:
+
+```js
+const app = createHelium({ root: "#app", requireCsrf: true })
+```
+
+```html
+<button @post="/api/users" @options="{ requireCsrf: true }">Create</button>
+```
+
+Required-CSRF validation applies only to state-changing same-origin requests;
+cross-origin requests and GET remain unaffected.
+
+### Validation and retry pattern
+
+Use the browser's native constraints for immediate validation, server responses
+for authoritative validation, and the HTTP lifecycle attributes for status and
+recovery:
+
+```html
+<form
+  @ref="form"
+  @post.prevent="/profile"
+  @params="new FormData($el)"
+  @target="#result"
+  @loading="loadingMarkup"
+  @success="saveSucceeded($response)"
+  @error="saveFailed($error, $request)"
+>
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" required
+    aria-describedby="email-error"
+    :aria-invalid="!!errors.email"
+    @input="clearError('email')">
+  <p id="email-error" @text="errors.email || ''"></p>
+  <button>Save</button>
+  <button type="button" @hidden="!canRetry" @click="$form.requestSubmit()">Retry</button>
+</form>
+<p role="status" aria-live="polite" @text="status"></p>
+<div id="result"></div>
+```
+
+The example deliberately clears a field's stale server error when it is edited,
+keeps the status in an `aria-live` region, focuses the first invalid server
+field, and retries through `requestSubmit()` so native constraints run again.
+See the complete runnable [`examples/validation.html`](examples/validation.html).
 
 ## Dynamic Attributes
 
@@ -1140,7 +1601,11 @@ HTTP request functions that can be called programmatically:
 </button>
 ```
 
-The arguments are `url`,`params` (not for `$get`) and `options`. `options` is an object that can include the properties `loading`,`target`, `template`
+The arguments are `url`, `params` (not for `$get`), and `options`. In addition
+to `loading`, `target`, `action`, and `template`, options accepts normal fetch
+options plus `signal`, `latest`, `requestKey`, `requireCsrf`, `success`, and
+`error`. Helpers return an awaitable promise; cancellation rejects it with an
+`AbortError`.
 
 ### Named refs
 
@@ -1306,18 +1771,30 @@ Two practical consequences:
   looping. A binding cascade that *never* stops writing new values (e.g.
   `@effect:*="count++"`) is detected and reported after 100 passes.
 
-### DOM Morphing with Idiomorph
+### DOM Morphing
 
-By default, when you update innerHTML with `@html`, Helium replaces the entire content. This can cause issues like losing focus, resetting scroll positions, or interrupting animations.
+When `@html` updates, Helium uses the first available strategy:
 
-If you include [Idiomorph](https://github.com/bigskysoftware/idiomorph), Helium will automatically use it for efficient DOM updates:
+1. `Turbo.morphChildren()` when a `/turbo` adapter is loaded and Turbo 8 exposes it
+2. A separately loaded `Idiomorph.morph()` global
+3. Native `innerHTML` replacement
+
+Turbo already bundles Idiomorph internally, so Rails applications should not
+load another copy. Helium's Turbo adapter reuses Turbo's public morphing function.
+Applications without Turbo can optionally include
+[Idiomorph](https://github.com/bigskysoftware/idiomorph):
 
 ```html
-<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>
+<script src="https://unpkg.com/idiomorph@0.7.4"></script>
 <script type="module">
   import helium from 'https://cdn.jsdelivr.net/gh/daz-codes/helium/helium.js';
 </script>
 ```
+
+Without either morpher, `@html` still works normally. Morphing is not required
+for newly inserted Helium attributes: the mutation observer processes those in
+all three paths. Its benefit is retaining unchanged child DOM nodes where
+possible.
 
 **Benefits:**
 - Preserves focus on input elements
@@ -1334,7 +1811,8 @@ If you include [Idiomorph](https://github.com/bigskysoftware/idiomorph), Helium 
 
 ### List Rendering with Keys
 
-When rendering lists with `@html`, you can add `key` or `data-key` attributes to help Helium (and Idiomorph) efficiently track and update individual items:
+When rendering lists with `@html`, add stable `id`, `key`, or `data-key`
+attributes to help the active Turbo/Idiomorph morpher match existing items:
 
 ```html
 <ul @html="items.map(item => `
@@ -1374,7 +1852,7 @@ This means Helium works seamlessly with:
 - Dynamically inserted content
 - Content loaded via AJAX
 - Third-party widgets that inject HTML
-- Turbo/Hotwire page updates
+- Turbo/Hotwire page updates when using a `/turbo` adapter
 
 **Example:**
 ```html
@@ -1391,12 +1869,67 @@ This means Helium works seamlessly with:
 
 ### Integration with Turbo/Hotwire
 
-Helium automatically integrates with Turbo Drive:
+Turbo lifecycle integration is opt-in, like SSE. Rails applications should
+import the adapter instead of the base entry point:
 
-- Cleans up listeners before page navigation (`turbo:before-render`)
-- Re-initializes after page loads (`turbo:render`)
+```js
+import helium from "@daz4126/helium/turbo"
+// or: @daz4126/helium/turbo/sse
+// CSP: @daz4126/helium/csp/turbo or @daz4126/helium/csp/turbo/sse
+```
 
-No additional configuration needed - just use Helium with Turbo normally.
+The adapter:
+
+- Leaves the current page fully rendered and interactive until Turbo swaps in
+  the next one. The old page's instance tears itself down (aborting requests
+  and signals, removing listeners) when its body is detached.
+- Starts Helium on each newly rendered page (`turbo:render`), re-applying the
+  state you first passed to `helium(initialState)` so functions and shared
+  values stay available. `heliumTeardown()` forgets that state.
+- Skips cached previews: only the real response is initialized, so `@init`
+  and on-load requests run once per visit.
+- Discards `@for`/`@if` output restored from Turbo's page cache (generated nodes
+  carry a `data-helium-generated` attribute) before rendering it again.
+- Keeps Helium alive through morphs: page refreshes (`turbo-refresh-method`
+  `morph`, including Rails `broadcasts_refreshes`), frames with
+  `refresh="morph"`, and `<turbo-stream method="morph">`. Rendered rows,
+  listeners, and client-side state such as counters, open menus, and
+  half-typed inputs survive; bindings are re-applied over the server markup.
+  When the server sends a changed `@data` attribute, those values are applied,
+  so server-owned data updates while untouched local state is preserved.
+- Mounts each `data-turbo-permanent` element inside the page root as its own
+  independent root, so its state survives navigation.
+
+This is tested with Turbo 8 restoration visits, previews, morph refreshes,
+morphing Frames and Streams, permanent elements, and both the Standard and CSP
+builds.
+
+Ordinary page content needs no configuration. Permanent elements get their own
+state, separate from the page's, because they outlive the page around them:
+
+```html
+<aside id="counter" data-turbo-permanent @data="{ plays: 0 }">
+  <button @click="plays++" @text="plays"></button>
+</aside>
+```
+
+A permanent element outside the page root (for example beside a
+`[data-helium]` root) can be mounted explicitly instead:
+
+```html
+<aside id="player" data-turbo-permanent>
+  <button @click="playing = !playing" @text="playing ? 'Pause' : 'Play'"></button>
+</aside>
+
+<script type="module">
+  import helium from "@daz4126/helium/turbo"
+  await helium.mount("#player", { playing: false })
+</script>
+```
+
+Turbo preserves the element while the explicit instance preserves its state,
+listeners, signals, and cleanup lifecycle. More generally, a live root nested
+inside another is left to its own instance; mount the inner root first.
 
 ## Security Considerations
 
@@ -1429,6 +1962,8 @@ Helium automatically includes CSRF tokens for same-origin requests:
 ```
 
 The token is automatically included in POST, PUT, PATCH, and DELETE requests to the same origin.
+Set `requireCsrf: true` on `createHelium()` or in a request's `@options` to
+reject those requests before `fetch()` when the token is absent.
 
 ### Content Security Policy
 
@@ -1586,7 +2121,7 @@ helium({
 
 ### JavaScript Expression Errors
 
-If a binding expression throws at runtime, Helium logs the error and continues
+In Standard/CSP, if a binding expression throws at runtime, Helium logs the error and continues
 without updating that binding. Failed compilation keeps Helium's literal-string
 ergonomics: plain text such as `@text="Loading..."` stays quiet, while
 expression-looking failures such as `@text="user.name."` or
@@ -1599,8 +2134,10 @@ expression-looking failures such as `@text="user.name."` or
 
 ### HTTP Request Errors
 
-HTTP directives log failed requests to the console. Programmatic helpers return
-promises, so you can handle failures explicitly:
+HTTP directives route failed requests to `@error` and the instance-level
+`handleError` hook (or the console when no hook is configured). Programmatic
+helpers return promises and also accept `error(error, request)`, so failures can
+be handled close to the request:
 
 ```html
 <button @click="$post('/api/save', { data: formData }, '#message')
@@ -1611,9 +2148,13 @@ promises, so you can handle failures explicitly:
 <div id="message" @html="saveError || 'Ready to save'"></div>
 ```
 
+Expected cancellation is deliberately excluded from error reporting. The
+promise still rejects with `AbortError`, allowing an awaiting caller to detect
+it when needed.
+
 ### Invalid Attribute Syntax
 
-Helium keeps plain malformed value expressions as literal values. If a failed
+Standard/CSP keep plain malformed value expressions as literal values. If a failed
 expression looks like broken JavaScript, Helium emits a warning with directive
 context. Event handlers, HTTP options, `@data`, `@for`, `@if`, `@calculate`,
 `@effect`, and `@init` are treated strictly and warn on compile failure.
@@ -1626,8 +2167,9 @@ intentionally absent (or still on the roadmap). Current gaps:
 
 ### Not yet supported
 
-- **No `$watch`/`$nextTick`, and no cross-root shared store** — each mounted
-  instance has its own isolated state namespace.
+- **No `$nextTick` and no cross-root shared store** — each mounted instance has
+  its own isolated state namespace. Managed import behaviors have programmatic
+  [`watch()`](#programmatic-watching); there is no expression-level `$watch`.
 - **No transition helper** — use CSS transitions/classes directly with
   `@hidden`, `@visible`, or `@if`.
 
@@ -1646,16 +2188,29 @@ lifecycle and JavaScript escape hatches needed when behavior becomes complex.
   replace, and removal now install and tear down bindings, events, refs,
   initializers, local data, and structural directives independently.
 - [x] **Run the production browser suite in Chromium, Firefox, and WebKit.** Keep
-  the same CSP, Turbo, SSE, keyed identity, dynamic-directive, late-import,
-  Lite, and entry-point checks in every engine.
+  the same CSP, optional Turbo/SSE, keyed identity, dynamic-directive,
+  late-import, Lite, and entry-point checks in every engine.
+- [x] **Make Turbo snapshots structurally clean.** Mark generated `@for` rows
+  and `@if` nodes, discard stale copies restored from the cache, and rebuild
+  once, without emptying the live page before Turbo swaps it.
+- [x] **Keep state through Turbo morphs.** Page, frame, and stream morphs keep
+  the instance, rendered rows, and client state alive.
+- [x] **Verify the real Turbo 8 lifecycle.** Exercise restoration visits, morph
+  refreshes, Frames, Streams, and `data-turbo-permanent` roots against the
+  installed Turbo package in Chromium, Firefox, and WebKit.
+- [x] **Define explicit/default mount ownership.** Explicit factories and mounts
+  suppress the automatic Turbo-managed instance so an element never receives
+  two sets of listeners.
+- [x] **Stabilize the package contract.** Normalize named `helium` and
+  `heliumTeardown` exports, publish declarations for every entry point, and
+  install the packed tarball into a clean consumer during CI.
 
 #### P1 — complex-behavior escape hatches
 
-1. **Formalize lifecycle modules over `@init`.** Document the existing
-   `@import` + `@init` setup-function convention: imported setup receives its
-   required element, state, refs, and dispatch context explicitly and returns
-   cleanup. Keep ordinary behavior inline and move only complex imperative work
-   into a lifecycle module.
+1. [x] **Formalize lifecycle modules over `@init`.** Document the setup-function
+   convention: setup receives its required element, state, refs, and dispatch
+   context explicitly and returns cleanup. Keep ordinary behavior inline and
+   move only complex imperative work into a lifecycle module.
 
    ```js
    export function connectFeature(element, data, refs) {
@@ -1666,7 +2221,7 @@ lifecycle and JavaScript escape hatches needed when behavior becomes complex.
    }
    ```
 
-2. **Formally support and test namespaced initializers.** Allow independent
+2. [x] **Formally support and test namespaced initializers.** Allow independent
    behaviors such as `@init:editor` and `@init:tooltip` on one element, with
    isolated replacement and cleanup when either attribute changes.
 
@@ -1677,55 +2232,65 @@ lifecycle and JavaScript escape hatches needed when behavior becomes complex.
    ></div>
    ```
 
-3. **Add unified lifecycle error handling.** Route initializer setup, async
+3. [x] **Add unified lifecycle error handling.** Route initializer setup, async
    rejection, cleanup, binding, event, import, and request failures through an
    instance-level `handleError(error, context)` hook and optional debug mode.
-4. **Add an initializer-scoped `AbortSignal`.** Give each initializer a signal
+4. [x] **Add an initializer-scoped `AbortSignal`.** Give each initializer a signal
    that aborts when its attribute is replaced, removed, its element disconnects,
    or its Helium root unmounts, so listeners and pending external work can use
    native cancellation.
-5. **Support asynchronous setup and cleanup safely.** Recognize setup promises,
+5. [x] **Support asynchronous setup and cleanup safely.** Recognize setup promises,
    avoid registering stale results after disconnection or replacement, run a
    cleanup returned asynchronously, and report rejected setup/cleanup through
    the lifecycle error hook.
-6. **Add programmatic `watch()`.** Let imported setup functions observe reactive
+6. [x] **Fix mounted-root disconnection cleanup.** Automatically abort signals,
+   run cleanup, and release observers and bindings if an external DOM owner
+   disconnects a mounted root; preserve lifecycle during a synchronous move.
+7. [x] **Make `@import` lifecycle-aware.** Treat a module's default function
+   export as per-element setup while preserving named exports for expressions.
+8. [x] **Give imported behaviors local refs and query helpers.** Supply current,
+   DOM-ordered `refs`, `query()`, and `query.all()` bounded by nested managed
+   behaviors, alongside data, dispatch, root, element, and signal context.
+9. [x] **Compose multiple imports independently.** Allow comma-separated default
+   behavior exports on one element and clean only the behavior whose module
+   name is removed without restarting its siblings.
+10. [x] **Add programmatic `watch()`.** Let imported setup functions observe reactive
    state without exporting update functions or storing external instances in a
    module-level `WeakMap`; include current/previous values and lifecycle-bound
    cleanup. Keep middleware separate and lower priority.
-7. **Publish TypeScript declarations** for mounting, factories, expression
+11. [x] **Publish TypeScript declarations** for mounting, factories, expression
    engines, CSP globals, SSE, lifecycle errors, initializer context, signals,
    and watching.
 
 #### P2 — lifecycle depth and application maturity
 
-8. **Observe ref collections** so complex behaviors can react when matching
+12. [x] **Observe ref collections** so complex behaviors can react when matching
    refs connect, disconnect, or reorder; this covers Stimulus target callbacks
    without changing simple `$ref`/`$refs` usage.
-9. **Complete the HTTP lifecycle:** request cancellation with `AbortController`,
+13. [x] **Complete the HTTP lifecycle:** request cancellation with `AbortController`,
    explicit success/error hooks, consistent `@loading` restoration, and opt-in
    required-CSRF validation for state-changing same-origin requests.
-10. **Evaluate behavior lookup only after lifecycle modules are established.**
+14. **Evaluate behavior lookup only after lifecycle modules are established.**
     Prefer `$dispatch` for loose coordination; add outlet-like instance lookup
     only if real applications require direct behavior-to-behavior calls.
 
 #### P3 — evidence-driven conveniences
 
-11. **Document complete validation and error-state patterns** covering native
+15. [x] **Document complete validation and error-state patterns** covering native
    constraint validation, HTTP failure, retry, accessible messages, and stale
    error clearing before adding validation helpers.
-12. **Consider extensible event modifiers and structured action parameters.**
+16. **Consider extensible event modifiers and structured action parameters.**
    Expressions already cover most cases, so add APIs only for repeated needs.
-13. **Revisit `@use`, debounced binding, middleware, transitions, and a shared
-    store** only with concrete use cases and explicit size budgets. Event
-    debouncing, CSS transitions, custom events, and independent roots cover the
-    common forms today. Add `@use` only if lifecycle modules reveal a need for
-    behavior registration, private instances, or package interoperability
-    beyond namespaced `@init`.
+17. **Revisit custom directives, debounced binding, middleware, transitions,
+    and a shared store** only with concrete use cases and explicit size budgets.
+    Lifecycle-aware `@import` now covers reusable per-element behavior, so an
+    additional `@use` is not planned. Consider an `@action` or extension API
+    only if applications need to define genuinely new directive semantics.
 
 This ordering moves the former HTTP/form-heavy roadmap behind lifecycle,
 diagnostics, watching, and types. The HTTP, CSRF, loading, validation, and error
-example work remains planned, but it does not by itself close the most important
-Stimulus-parity gaps.
+example work is now complete; it improves application maturity but does not by
+itself close the remaining Stimulus-parity gaps.
 
 ## Contributing
 
@@ -1737,15 +2302,18 @@ Helium is open source! Contributions, issues, and feature requests are welcome.
 
 Before submitting a change, run `npm run check`. It executes the full jsdom test
 suite, creates the production bundles, smoke-tests them, and fails if any gzip
-size budget is exceeded. `npm run test:browser` runs the cross-browser smoke suite
-used by CI for CSP, Turbo, SSE, keyed focus preservation, late imports, Lite
-generation, and browser entry imports. `npm run check:ci` runs both paths.
+size budget is exceeded. `npm run test:browser` runs the cross-browser smoke
+suite used by CI for CSP, real Turbo 8 navigation/morphing/Frames/Streams and
+permanent roots, SSE, keyed focus preservation, late imports, the standalone Lite runtime,
+and browser entry imports. `npm run test:types` checks the declarations and
+`npm run test:package` installs the packed tarball in a clean consumer.
+`npm run check:ci` runs every path.
 `npm run size` also reports raw, gzip, and Brotli sizes.
 
-`helium.js` contains the shared runtime plus sections marked Standard-only.
-`npm run generate` derives `helium-lite.js`; do not edit the generated Lite file
-directly. Standard keeps keyed lists, HTTP, imports, and Turbo, while SSE remains
-an optional module.
+`helium.js` is the Standard runtime. `helium-lite.js` is a separately maintained
+minimal runtime and must stay below its 3 KB gzip budget. Turbo navigation and
+SSE are optional entry points; Standard/CSP retain keyed lists, HTTP, imports,
+and the complete lifecycle contract.
 
 ## License
 

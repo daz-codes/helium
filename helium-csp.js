@@ -243,6 +243,7 @@ const jexprEngine = {
       $root: ctx.rootElement,
       $scope: ctx.scopeElement,
       $refs: ctx.pluralRefs,
+      $signal: ctx.signal,
       $dispatch: ctx.dispatch,
       $html: ctx.html,
       $Date: (...args) => new Date(...args),
@@ -252,7 +253,8 @@ const jexprEngine = {
       $put: ctx.put,
       $patch: ctx.patch,
       $delete: ctx.del,
-      ...ctx.refs
+      ...ctx.refs,
+      ...ctx.magic
     };
     // Proxy to allow state access and assignment without $data prefix
     return new Proxy(locals, {
@@ -269,18 +271,32 @@ const jexprEngine = {
 };
 
 // Create helium with jexpr engine (CSP-safe)
-const { helium: runHelium, heliumTeardown: runHeliumTeardown, mount: runMount } = createHelium({ engine: jexprEngine });
+const buildCSPHelium = (options = {}) => createHelium({ ...options, engine: jexprEngine });
 let initialized = false;
+let defaultActive = false;
 let autoTimer = null;
 
 const suppressAutoInit = () => {
   initialized = true;
   if (autoTimer !== null) clearTimeout(autoTimer);
   autoTimer = null;
+  if (defaultActive) {
+    defaultActive = false;
+    runHeliumTeardown();
+  }
+};
+
+const { helium: runHelium, heliumTeardown: runHeliumTeardown, mount: runMount } = buildCSPHelium();
+const createCSPHelium = (options = {}) => {
+  suppressAutoInit();
+  return buildCSPHelium(options);
 };
 
 const helium = (initialState) => {
-  suppressAutoInit();
+  defaultActive = true;
+  initialized = true;
+  if (autoTimer !== null) clearTimeout(autoTimer);
+  autoTimer = null;
   return runHelium(initialState);
 };
 
@@ -294,7 +310,6 @@ helium.allowGlobals = allowGlobals;
 
 const heliumTeardown = () => {
   suppressAutoInit();
-  runHeliumTeardown();
 };
 
 // Evaluate helper for testing
@@ -321,13 +336,7 @@ if (typeof document !== 'undefined') {
     // Imported after DOMContentLoaded already fired: init now.
     autoTimer = setTimeout(autoInit, 0);
   }
-  // Turbo integration
-  document.addEventListener("turbo:before-render", () => {
-    runHeliumTeardown();
-    initialized = false;
-  });
-  document.addEventListener("turbo:render", () => helium());
 }
 
-export { helium, heliumTeardown, evaluate, preprocess, allowGlobals };
+export { helium, heliumTeardown, evaluate, preprocess, allowGlobals, createCSPHelium };
 export default helium;

@@ -1,46 +1,73 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Helium TodoMVC</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A persistent keyed TodoMVC built with Helium.">
+  <title>Helium — persistent tasks</title>
   <link rel="stylesheet" href="todo.css">
+  <script src="file-warning.js" defer></script>
 </head>
 <body>
+  <nav class="todo-nav" aria-label="Example navigation">
+    <a class="todo-brand" href="index.html"><span>He</span> Helium examples</a>
+    <div><a href="index.html">Standard</a><a href="index-lite.html">Lite</a><a href="todo.html" aria-current="page">Todo</a></div>
+  </nav>
 
-<section class="todoapp" data-helium @local-storage="helium-todos" @import="todo"
-  @data="{ todos: [], newTodo: '', filter: 'all', nextId: 1 }">
+  <main class="todo-shell">
+    <header class="todo-intro">
+      <p>local storage · imported actions · keyed rows</p>
+      <h1>Keep the list.<br><em>Lose the controller.</em></h1>
+      <span>A complete persistent interaction whose structure remains visible in the HTML.</span>
+    </header>
 
-  <span hidden @calculate:remaining="todos.filter(t => !t.completed).length"></span>
-  <span hidden @calculate:filtered="filter === 'all' ? todos : filter === 'active' ? todos.filter(t => !t.completed) : todos.filter(t => t.completed)"></span>
+    <section class="todoapp" data-helium @local-storage="helium-todos" @import="todo" @data="{ todos: [], newTodo: '', filter: 'all', nextId: 1 }">
+      <span hidden @calculate:remaining="todos.filter(todo => !todo.completed).length"></span>
+      <span hidden @calculate:filtered="filter === 'all' ? todos : filter === 'active' ? todos.filter(todo => !todo.completed) : todos.filter(todo => todo.completed)"></span>
 
-  <header>
-    <h1>todos</h1>
-    <input class="new-todo" @bind="newTodo" @keydown.enter="addTodo($data)" placeholder="What needs to be done?" autofocus>
-  </header>
+      <header class="app-head">
+        <div><small>Today</small><h2>Things worth doing</h2></div>
+        <span class="count"><b @text="remaining">0</b> open</span>
+      </header>
 
-  <section @visible="todos.length > 0">
-    <label class="toggle-all-container">
-      <input type="checkbox" @click="toggleAll($data)" :checked="todos.length > 0 && todos.every(t => t.completed)">
-      Mark all as complete
-    </label>
-    <ul class="todo-list" @html="renderTodos(filtered)"></ul>
-  </section>
+      <form class="new-todo-form" @submit.prevent="addTodo($data)">
+        <input class="new-todo" @bind.trim="newTodo" placeholder="What needs to be done?" aria-label="New task" autofocus>
+        <button type="submit">Add task</button>
+      </form>
 
-  <footer class="footer" @visible="todos.length > 0">
-    <span @text="remaining + (remaining === 1 ? ' item' : ' items') + ' left'"></span>
-    <nav class="filters">
-      <button :class="{ selected: filter === 'all' }" @click="filter = 'all'">All</button>
-      <button :class="{ selected: filter === 'active' }" @click="filter = 'active'">Active</button>
-      <button :class="{ selected: filter === 'completed' }" @click="filter = 'completed'">Completed</button>
-    </nav>
-    <button class="clear-completed" @click="clearCompleted($data)" @visible="todos.some(t => t.completed)">Clear completed</button>
-  </footer>
+      <div class="todo-tools" @visible="todos.length > 0">
+        <label><input type="checkbox" @click="toggleAll($data)" :checked="todos.length > 0 && todos.every(todo => todo.completed)"> Complete all</label>
+        <nav class="filters" aria-label="Task filters">
+          <button :class="{ selected: filter === 'all' }" @click="filter = 'all'">All</button>
+          <button :class="{ selected: filter === 'active' }" @click="filter = 'active'">Active</button>
+          <button :class="{ selected: filter === 'completed' }" @click="filter = 'completed'">Done</button>
+        </nav>
+      </div>
 
-</section>
+      <ul class="todo-list">
+        <template @for="todo in filtered" :key="todo.id">
+          <li class="todo-item" :class="{ completed: todo.completed }">
+            <input type="checkbox" class="toggle" :checked="todo.completed" @click="toggleTodo($data, todo.id)" :aria-label="'Complete ' + todo.text">
+            <span class="todo-text" @text="todo.text"></span>
+            <button class="destroy" @click="removeTodo($data, todo.id)" :aria-label="'Remove ' + todo.text">×</button>
+          </li>
+        </template>
+      </ul>
 
-<p class="info">Built with <a href="https://github.com/daz-codes/helium">Helium</a></p>
+      <div class="empty-state" @visible="todos.length === 0">
+        <span>✓</span><strong>Your list is clear.</strong><small>Tasks are saved in this browser.</small>
+      </div>
+      <div class="empty-state" @visible="todos.length > 0 && filtered.length === 0">
+        <span>◎</span><strong>No tasks in this view.</strong><small>Try a different filter.</small>
+      </div>
 
-<script type="module" src="../helium.js"></script>
+      <footer class="app-footer" @visible="todos.some(todo => todo.completed)">
+        <button @click="clearCompleted($data)">Clear completed tasks</button>
+      </footer>
+    </section>
+  </main>
+
+  <footer class="page-footer">Powered by Helium's <code>@local-storage</code>, <code>@import</code>, <code>@calculate</code> and keyed <code>@for</code>.</footer>
+  <script type="module" src="../helium.js"></script>
 </body>
 </html>

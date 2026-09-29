@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import helium from './helium-sse.js';
+import { pathToFileURL } from 'node:url';
+import helium, { createHelium } from './helium-turbo-sse.js';
 
 // State changes are batched and applied on a microtask; a macrotask tick also
 // lets MutationObserver-driven processing of structural content settle.
@@ -16,7 +17,33 @@ describe('Helium Reactive Library', () => {
 
   afterEach(() => {
     window.heliumTeardown?.();
+    delete globalThis.Turbo;
+    delete globalThis.Idiomorph;
     document.body.innerHTML = '';
+  });
+
+  describe('Prototype pollution safety', () => {
+    afterEach(() => {
+      delete Object.prototype.polluted;
+      delete Object.prototype.polluted2;
+    });
+
+    it('does not pollute Object.prototype through an @bind path', async () => {
+      container.innerHTML = '<input @bind="__proto__.polluted" value="x">';
+      await helium({});
+      const input = container.querySelector('input');
+      input.value = 'hacked';
+      input.dispatchEvent(new Event('input'));
+      await tick();
+      expect(({}).polluted).toBeUndefined();
+    });
+
+    it('does not pollute Object.prototype through a @calculate path', async () => {
+      container.innerHTML = '<div @calculate:__proto__.polluted2="1"></div>';
+      await helium({});
+      await tick();
+      expect(({}).polluted2).toBeUndefined();
+    });
   });
 
   describe('State Reactivity', () => {
@@ -135,6 +162,40 @@ describe('Helium Reactive Library', () => {
       container.innerHTML = '<div @html="content"></div>';
       await helium({ content: '<strong>Bold</strong>' });
       expect(container.querySelector('div').innerHTML).toBe('<strong>Bold</strong>');
+    });
+
+    it('should prefer Turbo morphChildren for @html when Turbo exposes it', async () => {
+      const idiomorph = vi.fn();
+      const morphChildren = vi.fn((element, incoming) => {
+        element.innerHTML = incoming.innerHTML;
+      });
+      globalThis.Turbo = { morphChildren };
+      globalThis.Idiomorph = { morph: idiomorph };
+      container.innerHTML = '<div @html="content"></div>';
+
+      const state = await helium({ content: '<strong>One</strong>' });
+      expect(morphChildren).toHaveBeenCalledOnce();
+      expect(morphChildren.mock.calls[0][1].innerHTML).toBe('<strong>One</strong>');
+      expect(idiomorph).not.toHaveBeenCalled();
+
+      state.content = '<strong>Two</strong>';
+      await tick();
+      expect(morphChildren).toHaveBeenCalledTimes(2);
+      expect(container.querySelector('strong').textContent).toBe('Two');
+    });
+
+    it('should fall back to a standalone Idiomorph global for @html', async () => {
+      const morph = vi.fn((element, content) => { element.innerHTML = content; });
+      globalThis.Idiomorph = { morph };
+      container.innerHTML = '<div @html="content"></div>';
+
+      await helium({ content: '<em>Morphed</em>' });
+      expect(morph).toHaveBeenCalledWith(
+        container.querySelector('div'),
+        '<em>Morphed</em>',
+        { morphStyle: 'innerHTML' },
+      );
+      expect(container.querySelector('em').textContent).toBe('Morphed');
     });
 
     it('should work with data-he-text prefix', async () => {
@@ -284,7 +345,7 @@ describe('Helium Reactive Library', () => {
 
       await new Promise(r => setTimeout(r, 0));
       expect(state['missing.name']).toBeUndefined();
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('cannot set'));
+      expect(errorSpy).toHaveBeenCalledWith('Helium binding error:', expect.stringContaining('Cannot set'));
       errorSpy.mockRestore();
     });
   });
@@ -840,6 +901,546 @@ describe('Helium Reactive Library', () => {
       window.heliumTeardown();
 
       expect(cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('should manage namespaced initializers independently', async () => {
+      const started = [];
+      const cleaned = [];
+      const setup = name => {
+        started.push(name);
+        return () => cleaned.push(name);
+      };
+      container.innerHTML = `
+        <div
+          data-he-init:editor="setup('editor')"
+          data-he-init:tooltip="setup('tooltip')"
+        ></div>
+      `;
+      await helium({ setup });
+      const element = container.firstElementChild;
+
+      expect(started).toEqual(['editor', 'tooltip']);
+      expect(cleaned).toEqual([]);
+
+      element.setAttribute('data-he-init:editor', "setup('replacement-editor')");
+      await tick();
+      expect(started).toEqual(['editor', 'tooltip', 'replacement-editor']);
+      expect(cleaned).toEqual(['editor']);
+
+      element.removeAttribute('data-he-init:tooltip');
+      await tick();
+      expect(cleaned).toEqual(['editor', 'tooltip']);
+
+      element.remove();
+      await tick();
+      expect(cleaned).toEqual(['editor', 'tooltip', 'replacement-editor']);
+    });
+
+    it('should clean up every namespaced initializer when the root unmounts', async () => {
+      const cleaned = [];
+      container.innerHTML = `
+        <div
+          @init:editor="setup('editor')"
+          @init:tooltip="setup('tooltip')"
+        ></div>
+      `;
+      await helium({ setup: name => () => cleaned.push(name) });
+
+      window.heliumTeardown();
+
+      expect(cleaned).toEqual(['editor', 'tooltip']);
+    });
+
+    it('should give each initializer an independent signal and abort it before cleanup', async () => {
+      const signals = new Map();
+      const order = [];
+      container.innerHTML = `
+        <div
+          data-he-init:editor="setup('editor', $signal)"
+          data-he-init:tooltip="setup('tooltip', $signal)"
+        ></div>
+      `;
+      const instance = createHelium({ root: container });
+      await instance.helium({
+        setup: (name, signal) => {
+          signals.set(name, signal);
+          return () => order.push([name, signal.aborted]);
+        }
+      });
+      const element = container.firstElementChild;
+
+      expect(signals.get('editor').aborted).toBe(false);
+      expect(signals.get('tooltip').aborted).toBe(false);
+
+      element.removeAttribute('data-he-init:editor');
+      await tick();
+      expect(signals.get('editor').aborted).toBe(true);
+      expect(signals.get('tooltip').aborted).toBe(false);
+      expect(order).toEqual([['editor', true]]);
+
+      instance.heliumTeardown();
+      expect(signals.get('tooltip').aborted).toBe(true);
+      expect(order).toEqual([['editor', true], ['tooltip', true]]);
+    });
+
+    it('should clean up stale asynchronous setup without replacing the current initializer', async () => {
+      let resolveOld;
+      const oldSignal = [];
+      const replacementSignal = [];
+      const cleaned = [];
+      container.innerHTML = '<div data-he-init:feature="startOld($signal)"></div>';
+      const instance = createHelium({ root: container });
+      await instance.helium({
+        startOld: signal => {
+          oldSignal.push(signal);
+          return new Promise(resolve => { resolveOld = resolve; });
+        },
+        startNew: async signal => {
+          replacementSignal.push(signal);
+          await Promise.resolve();
+          return async () => { cleaned.push('new'); };
+        }
+      });
+      const element = container.firstElementChild;
+
+      element.setAttribute('data-he-init:feature', 'startNew($signal)');
+      await tick();
+      expect(oldSignal[0].aborted).toBe(true);
+      expect(replacementSignal[0].aborted).toBe(false);
+
+      resolveOld(async () => { cleaned.push('old'); });
+      await tick();
+      expect(cleaned).toEqual(['old']);
+
+      element.removeAttribute('data-he-init:feature');
+      await tick();
+      expect(replacementSignal[0].aborted).toBe(true);
+      expect(cleaned).toEqual(['old', 'new']);
+      instance.heliumTeardown();
+    });
+
+    it('should route setup, cleanup, binding, event, import, and request errors through handleError', async () => {
+      const errors = [];
+      const cleanupError = new Error('cleanup failed');
+      const fetchError = new Error('request failed');
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn().mockRejectedValue(fetchError);
+      container.innerHTML = `
+        <span @text="failBinding()"></span>
+        <button id="event" @click="failEvent()"></button>
+        <button id="request" @get="/failure"></button>
+        <div id="setup" data-he-init:bad="failSetup()"></div>
+        <div id="cleanup" data-he-init:cleanup="startCleanup()"></div>
+        <div data-he-import="/missing-helium-lifecycle-module.js"></div>
+      `;
+      const instance = createHelium({
+        root: container,
+        handleError: (error, context) => errors.push({ error, context }),
+      });
+      try {
+        await instance.helium({
+          failBinding: () => { throw new Error('binding failed'); },
+          failEvent: () => Promise.reject(new Error('event failed')),
+          failSetup: () => { throw new Error('setup failed'); },
+          startCleanup: () => async () => { throw cleanupError; },
+        });
+        container.querySelector('#event').click();
+        container.querySelector('#request').click();
+        container.querySelector('#cleanup').remove();
+        await tick();
+        await tick();
+
+        const phases = errors.map(({ context }) => context.phase);
+        expect(phases).toEqual(expect.arrayContaining(['binding', 'event', 'request', 'setup', 'cleanup', 'import']));
+        expect(errors.find(({ context }) => context.phase === 'setup').context).toMatchObject({
+          directive: 'data-he-init:bad',
+          expression: 'failSetup()',
+          element: container.querySelector('#setup'),
+        });
+        expect(errors.find(({ error }) => error === fetchError).context).toMatchObject({
+          phase: 'request', method: 'GET', url: '/failure',
+        });
+        expect(errors.find(({ error }) => error === cleanupError).context.signal.aborted).toBe(true);
+      } finally {
+        instance.heliumTeardown();
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('should report asynchronous setup rejection and ignore expected abort rejection', async () => {
+      const errors = [];
+      container.innerHTML = `
+        <div data-he-init:reject="rejectSetup()"></div>
+        <div id="abort" data-he-init:abort="waitForAbort($signal)"></div>
+      `;
+      const instance = createHelium({
+        root: container,
+        handleError: (error, context) => errors.push({ error, context }),
+      });
+      await instance.helium({
+        rejectSetup: async () => { throw new Error('async setup failed'); },
+        waitForAbort: signal => new Promise((_, reject) => signal.addEventListener('abort', () => {
+          reject(new DOMException('cancelled', 'AbortError'));
+        }, { once: true })),
+      });
+      container.querySelector('#abort').remove();
+      await tick();
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].error.message).toBe('async setup failed');
+      expect(errors[0].context.phase).toBe('setup');
+      instance.heliumTeardown();
+    });
+  });
+
+  describe('@import lifecycle behaviors', () => {
+    const one = pathToFileURL(`${process.cwd()}/test-fixtures/import-behavior-one.js`).href;
+    const two = pathToFileURL(`${process.cwd()}/test-fixtures/import-behavior-two.js`).href;
+
+    afterEach(() => {
+      delete globalThis.__heliumImportBehavior;
+    });
+
+    it('should run default exports independently and preserve named exports', async () => {
+      const calls = [];
+      const contexts = new Map();
+      const cleaned = [];
+      globalThis.__heliumImportBehavior = (name, context) => {
+        calls.push([name, context.element.id]);
+        contexts.set(`${name}:${context.element.id}`, context);
+        return () => cleaned.push([name, context.element.id, context.signal.aborted]);
+      };
+
+      container.innerHTML = `
+        <section id="outer" data-he-data="{ count: 2 }">
+          <button id="outer-trigger" class="candidate" data-he-ref="trigger"></button>
+          <aside id="nested">
+            <button id="nested-trigger" class="candidate" data-he-ref="trigger"></button>
+          </aside>
+        </section>
+      `;
+      const outer = container.querySelector('#outer');
+      const nested = container.querySelector('#nested');
+      outer.setAttribute('data-he-import', `${one}, ${two}`);
+      nested.setAttribute('data-he-import', two);
+
+      const instance = createHelium({ root: container });
+      const state = await instance.helium({});
+
+      expect(state.importedGreeting('Helium')).toBe('Hello Helium');
+      expect(state.importedBehaviorTwo).toBe(true);
+      expect(calls).toEqual([['one', 'outer'], ['two', 'outer'], ['two', 'nested']]);
+
+      const outerOne = contexts.get('one:outer');
+      const outerTwo = contexts.get('two:outer');
+      const nestedTwo = contexts.get('two:nested');
+      expect(outerOne).toMatchObject({ element: outer, root: container, scope: outer });
+      expect(outerOne.data.count).toBe(2);
+      expect(typeof outerOne.dispatch).toBe('function');
+      expect(typeof outerOne.watch).toBe('function');
+      expect(outerOne.refs.trigger).toEqual([container.querySelector('#outer-trigger')]);
+      expect(outerOne.query('.candidate')).toBe(container.querySelector('#outer-trigger'));
+      expect(outerOne.query.all('.candidate')).toEqual([container.querySelector('#outer-trigger')]);
+      expect(outerTwo.refs.trigger).toEqual(outerOne.refs.trigger);
+      expect(nestedTwo.refs.trigger).toEqual([container.querySelector('#nested-trigger')]);
+      expect(nestedTwo.query.all('.candidate')).toEqual([container.querySelector('#nested-trigger')]);
+
+      const added = document.createElement('button');
+      added.className = 'candidate';
+      added.setAttribute('data-he-ref', 'trigger');
+      outer.insertBefore(added, nested);
+      await tick();
+      expect(outerOne.refs.trigger).toEqual([container.querySelector('#outer-trigger'), added]);
+      expect(outerOne.query.all('.candidate')).toEqual([container.querySelector('#outer-trigger'), added]);
+
+      outer.setAttribute('data-he-import', two);
+      await tick();
+      expect(cleaned).toEqual([['one', 'outer', true]]);
+      expect(outerOne.signal.aborted).toBe(true);
+      expect(outerTwo.signal.aborted).toBe(false);
+      expect(nestedTwo.signal.aborted).toBe(false);
+      expect(calls).toEqual([['one', 'outer'], ['two', 'outer'], ['two', 'nested']]);
+
+      outer.removeAttribute('data-he-import');
+      await tick();
+      expect(cleaned).toEqual([['one', 'outer', true], ['two', 'outer', true]]);
+      expect(nestedTwo.signal.aborted).toBe(false);
+
+      instance.heliumTeardown();
+      expect(cleaned).toEqual([
+        ['one', 'outer', true],
+        ['two', 'outer', true],
+        ['two', 'nested', true],
+      ]);
+    });
+
+    it('should hand import-map pinned bare names to import() unchanged', async () => {
+      const setup = vi.fn();
+      vi.doMock('pinned-menu', () => ({ default: setup, pinnedValue: 'pinned' }));
+      vi.doMock('widgets/tabs', () => ({ default: undefined, tabsValue: 'tabs' }));
+      const map = document.createElement('script');
+      map.type = 'importmap';
+      map.textContent = JSON.stringify({ imports: { 'pinned-menu': '/assets/menu-abc123.js', 'widgets/': '/assets/widgets/' } });
+      document.head.appendChild(map);
+
+      try {
+        container.innerHTML = '<section id="menu" @import="pinned-menu, widgets/tabs"></section>';
+        const instance = createHelium({ root: container });
+        const state = await instance.helium({});
+
+        expect(state.pinnedValue).toBe('pinned');
+        expect(state.tabsValue).toBe('tabs');
+        expect(setup).toHaveBeenCalledTimes(1);
+        expect(setup.mock.calls[0][0].element).toBe(container.querySelector('#menu'));
+        instance.heliumTeardown();
+      } finally {
+        map.remove();
+        vi.doUnmock('pinned-menu');
+        vi.doUnmock('widgets/tabs');
+      }
+    });
+
+    it('should keep resolving unpinned bare names relative to the page', async () => {
+      const handleError = vi.fn();
+      const map = document.createElement('script');
+      map.type = 'importmap';
+      map.textContent = JSON.stringify({ imports: { 'pinned-menu': '/assets/menu.js' } });
+      document.head.appendChild(map);
+
+      try {
+        container.innerHTML = '<section @import="unpinned-helper"></section>';
+        const instance = createHelium({ root: container, handleError });
+        await instance.helium({});
+
+        expect(handleError).toHaveBeenCalledTimes(1);
+        expect(handleError.mock.calls[0][1]).toMatchObject({
+          phase: 'import',
+          path: new URL('./unpinned-helper.js', location.href).href,
+        });
+        instance.heliumTeardown();
+      } finally {
+        map.remove();
+      }
+    });
+
+    it('should safely finish asynchronous imported setup after its behavior is removed', async () => {
+      let resolveSetup;
+      let signal;
+      const cleanup = vi.fn();
+      const errors = [];
+      globalThis.__heliumImportBehavior = (_name, context) => {
+        signal = context.signal;
+        return new Promise(resolve => { resolveSetup = resolve; });
+      };
+      const element = document.createElement('div');
+      element.setAttribute('data-he-import', one);
+      container.append(element);
+      const instance = createHelium({
+        root: container,
+        handleError: (error, context) => errors.push({ error, context }),
+      });
+      await instance.helium({});
+
+      element.removeAttribute('data-he-import');
+      await tick();
+      expect(signal.aborted).toBe(true);
+
+      resolveSetup(cleanup);
+      await tick();
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(errors).toEqual([]);
+      instance.heliumTeardown();
+    });
+
+    it('should watch reactive selections with previous values and lifecycle cleanup', async () => {
+      const changes = [];
+      const names = [];
+      const immediate = [];
+      const stoppedChanges = [];
+      const errors = [];
+      let context;
+      globalThis.__heliumImportBehavior = (_name, value) => {
+        context = value;
+        value.watch(
+          data => data.useAlternate ? data.alternate : data.count,
+          (current, previous) => changes.push([current, previous]),
+        );
+        value.watch(
+          () => value.data.user.name,
+          (current, previous) => names.push([current, previous]),
+        );
+        value.watch(
+          data => data.alternate,
+          (current, previous) => immediate.push([current, previous]),
+          { immediate: true },
+        );
+        const stop = value.watch(
+          data => data.count,
+          (current, previous) => stoppedChanges.push([current, previous]),
+        );
+        stop();
+        stop();
+        value.watch(
+          data => data.fail,
+          async fail => { if (fail) throw new Error('watched callback failed'); },
+        );
+      };
+      const element = document.createElement('div');
+      element.setAttribute('data-he-data', "{ count: 0, alternate: 10, useAlternate: false, user: { name: 'Ada' }, fail: false }");
+      element.setAttribute('data-he-import', one);
+      container.append(element);
+      const instance = createHelium({
+        root: container,
+        handleError: (error, details) => errors.push({ error, details }),
+      });
+      await instance.helium({});
+
+      expect(changes).toEqual([]);
+      expect(names).toEqual([]);
+      expect(immediate).toEqual([[10, undefined]]);
+      expect(stoppedChanges).toEqual([]);
+
+      context.data.count = 1;
+      await tick();
+      expect(changes).toEqual([[1, 0]]);
+
+      context.data.count = 2;
+      context.data.count = 3;
+      await tick();
+      expect(changes).toEqual([[1, 0], [3, 1]]);
+      expect(stoppedChanges).toEqual([]);
+
+      context.data.useAlternate = true;
+      await tick();
+      expect(changes.at(-1)).toEqual([10, 3]);
+      context.data.count = 4;
+      await tick();
+      expect(changes.at(-1)).toEqual([10, 3]);
+      context.data.alternate = 11;
+      await tick();
+      expect(changes.at(-1)).toEqual([11, 10]);
+
+      context.data.user.name = 'Grace';
+      await tick();
+      expect(names).toEqual([['Grace', 'Ada']]);
+
+      element.setAttribute('data-he-data', "{ count: 100, alternate: 20, useAlternate: true, user: { name: 'Lin' }, fail: false }");
+      await tick();
+      expect(changes.at(-1)).toEqual([20, 11]);
+      expect(names.at(-1)).toEqual(['Lin', 'Grace']);
+
+      context.data.fail = true;
+      await tick();
+      await tick();
+      expect(errors).toHaveLength(1);
+      expect(errors[0].error.message).toBe('watched callback failed');
+      expect(errors[0].details).toMatchObject({
+        phase: 'watch', element, behavior: one,
+      });
+
+      element.removeAttribute('data-he-import');
+      await tick();
+      context.data.alternate = 12;
+      context.data.user.name = 'Katherine';
+      await tick();
+      expect(changes.at(-1)).toEqual([20, 11]);
+      expect(names).toEqual([['Grace', 'Ada'], ['Lin', 'Grace']]);
+      instance.heliumTeardown();
+    });
+
+    it('should watch behavior-local refs as they connect, reorder, and cross behavior boundaries', async () => {
+      const changes = new Map();
+      const initiallyEmpty = [];
+      globalThis.__heliumImportBehavior = (name, context) => {
+        const key = `${name}:${context.element.id}`;
+        changes.set(key, []);
+        context.watch(
+          () => context.refs.item,
+          (current, previous) => changes.get(key).push({
+            current: current.map(element => element.id),
+            previous: previous.map(element => element.id),
+          }),
+        );
+        if (name === 'one') {
+          context.watch(
+            () => context.refs.late,
+            (current, previous) => initiallyEmpty.push([current.map(el => el.id), previous.map(el => el.id)]),
+          );
+        }
+      };
+      container.innerHTML = `
+        <section id="outer">
+          <button id="outer-a" data-he-ref="item"></button>
+          <aside id="nested">
+            <button id="nested-a" data-he-ref="item"></button>
+          </aside>
+        </section>
+      `;
+      const outer = container.querySelector('#outer');
+      const nested = container.querySelector('#nested');
+      outer.setAttribute('data-he-import', one);
+      nested.setAttribute('data-he-import', two);
+      const instance = createHelium({ root: container });
+      await instance.helium({});
+
+      expect(changes.get('one:outer')).toEqual([]);
+      expect(changes.get('two:nested')).toEqual([]);
+      expect(initiallyEmpty).toEqual([]);
+
+      const late = document.createElement('button');
+      late.id = 'late';
+      late.setAttribute('data-he-ref', 'late');
+      outer.insertBefore(late, nested);
+      await tick();
+      expect(initiallyEmpty).toEqual([[['late'], []]]);
+
+      outer.insertAdjacentHTML('afterbegin', '<span id="unrelated"></span>');
+      await tick();
+      expect(changes.get('one:outer')).toEqual([]);
+
+      const outerB = document.createElement('button');
+      outerB.id = 'outer-b';
+      outerB.setAttribute('data-he-ref', 'item');
+      outer.insertBefore(outerB, nested);
+      await tick();
+      expect(changes.get('one:outer')).toEqual([{
+        current: ['outer-a', 'outer-b'], previous: ['outer-a'],
+      }]);
+      expect(changes.get('two:nested')).toEqual([]);
+
+      outer.insertBefore(outerB, container.querySelector('#outer-a'));
+      await tick();
+      expect(changes.get('one:outer').at(-1)).toEqual({
+        current: ['outer-b', 'outer-a'], previous: ['outer-a', 'outer-b'],
+      });
+
+      const nestedB = document.createElement('button');
+      nestedB.id = 'nested-b';
+      nestedB.setAttribute('data-he-ref', 'item');
+      nested.append(nestedB);
+      await tick();
+      expect(changes.get('one:outer')).toHaveLength(2);
+      expect(changes.get('two:nested')).toEqual([{
+        current: ['nested-a', 'nested-b'], previous: ['nested-a'],
+      }]);
+
+      nested.removeAttribute('data-he-import');
+      await tick();
+      expect(changes.get('one:outer').at(-1)).toEqual({
+        current: ['outer-b', 'outer-a', 'nested-a', 'nested-b'],
+        previous: ['outer-b', 'outer-a'],
+      });
+      expect(changes.get('two:nested')).toHaveLength(1);
+
+      outer.removeAttribute('data-he-import');
+      await tick();
+      const outerC = document.createElement('button');
+      outerC.id = 'outer-c';
+      outerC.setAttribute('data-he-ref', 'item');
+      outer.append(outerC);
+      await tick();
+      expect(changes.get('one:outer')).toHaveLength(3);
+      instance.heliumTeardown();
     });
   });
 
@@ -1792,6 +2393,77 @@ describe('@calculate', () => {
     it('should reject a selector that does not match a root', async () => {
       await expect(helium.mount('#missing-root')).rejects.toThrow(/root/i);
     });
+
+    it('should tear down a mounted root when its DOM owner disconnects it', async () => {
+      const firstHost = document.createElement('div');
+      const secondHost = document.createElement('div');
+      const root = document.createElement('section');
+      root.setAttribute('data-he-init:root', 'setup($signal)');
+      firstHost.append(root);
+      document.body.append(firstHost, secondHost);
+      let signal;
+      const cleanup = vi.fn(() => expect(signal.aborted).toBe(true));
+      const app = await helium.mount(root, {
+        setup: value => (signal = value, cleanup),
+      });
+
+      // A synchronous move is not a disconnection lifecycle.
+      secondHost.append(root);
+      await tick();
+      expect(signal.aborted).toBe(false);
+      expect(cleanup).not.toHaveBeenCalled();
+
+      secondHost.remove();
+      await tick();
+      expect(signal.aborted).toBe(true);
+      expect(cleanup).toHaveBeenCalledOnce();
+
+      app.unmount();
+      expect(cleanup).toHaveBeenCalledOnce();
+      firstHost.remove();
+    });
+
+    it('should detect root removal from inside a shadow tree', async () => {
+      const host = document.createElement('div');
+      const shadow = host.attachShadow({ mode: 'open' });
+      const root = document.createElement('section');
+      root.setAttribute('data-he-init', 'setup($signal)');
+      shadow.append(root);
+      document.body.append(host);
+      let signal;
+      const cleanup = vi.fn();
+      await helium.mount(root, { setup: value => (signal = value, cleanup) });
+
+      root.remove();
+      await tick();
+      expect(signal.aborted).toBe(true);
+      expect(cleanup).toHaveBeenCalledOnce();
+      host.remove();
+    });
+
+    it('should preserve a data-turbo-permanent root across Turbo parking', async () => {
+      const root = document.createElement('section');
+      root.setAttribute('data-turbo-permanent', '');
+      root.innerHTML = '<button @click="count++"></button><span @text="count"></span>';
+      document.body.append(root);
+      const app = await helium.mount(root, { count: 0 });
+
+      root.remove();
+      await Promise.resolve();
+      document.body.append(root);
+      await tick();
+      root.querySelector('button').click();
+      await tick();
+      expect(root.querySelector('span').textContent).toBe('1');
+
+      root.remove();
+      await tick();
+      await tick();
+      app.state.count = 2;
+      await tick();
+      expect(root.querySelector('span').textContent).toBe('1');
+      app.unmount();
+    });
   });
 
   describe('Keyed @for', () => {
@@ -1983,6 +2655,98 @@ describe('@calculate', () => {
     expect(container.querySelector('p').textContent).toBe('11');
   });
 
+  it('should remove structural output before re-initializing the same DOM', async () => {
+    container.innerHTML = `
+      <main @data="{ items: [{ id: 1 }, { id: 2 }], show: true }">
+        <template @for="item in items" :key="item.id"><span class="row" @text="item.id"></span></template>
+        <template @if="show"><b class="conditional">shown</b></template>
+      </main>
+    `;
+    await helium({});
+    await tick();
+    expect(container.querySelectorAll('.row')).toHaveLength(2);
+    expect(container.querySelectorAll('.conditional')).toHaveLength(1);
+
+    await helium({});
+    await tick();
+
+    expect(container.querySelectorAll('.row')).toHaveLength(2);
+    expect(container.querySelectorAll('.conditional')).toHaveLength(1);
+  });
+
+  it('should not duplicate structural output from a restored Turbo snapshot', async () => {
+    container.innerHTML = `
+      <main @data="{ items: [{ id: 1 }, { id: 2 }], show: true }">
+        <template @for="item in items" :key="item.id"><span class="row" @text="item.id"></span></template>
+        <template @if="show"><b class="conditional">shown</b></template>
+      </main>
+    `;
+    await helium({});
+    await tick();
+
+    // Caching leaves the live page (and so the snapshot) fully rendered.
+    document.dispatchEvent(new Event('turbo:before-cache'));
+    expect(container.querySelectorAll('.row')).toHaveLength(2);
+    expect(container.querySelectorAll('.conditional')).toHaveLength(1);
+
+    // Turbo restores a clone of the page; its stale rows must not duplicate.
+    const snapshot = container.cloneNode(true);
+    container.replaceWith(snapshot);
+    container = snapshot;
+    document.dispatchEvent(new Event('turbo:render'));
+    await tick();
+    expect(container.querySelectorAll('.row')).toHaveLength(2);
+    expect(container.querySelectorAll('.conditional')).toHaveLength(1);
+  });
+
+  it('should reapply initial state after Turbo renders until torn down', async () => {
+    container.innerHTML = '<span @text="greet()"></span>';
+    await helium({ greet: () => 'hello' });
+    const next = container.cloneNode(false);
+    next.innerHTML = '<b @text="typeof greet"></b>';
+    container.replaceWith(next);
+    container = next;
+    document.dispatchEvent(new Event('turbo:render'));
+    await tick();
+    expect(container.querySelector('b').textContent).toBe('function');
+
+    window.heliumTeardown();
+    const state = await helium();
+    expect(state.greet).toBeUndefined();
+  });
+
+  it('should not initialize a Turbo preview', async () => {
+    container.innerHTML = '<span @text="count"></span>';
+    await helium({ count: 1 });
+    const preview = container.cloneNode(true);
+    preview.querySelector('span').textContent = 'preview';
+    container.replaceWith(preview);
+    container = preview;
+    document.documentElement.setAttribute('data-turbo-preview', '');
+    try {
+      document.dispatchEvent(new Event('turbo:render'));
+      await tick();
+      expect(container.querySelector('span').textContent).toBe('preview');
+    } finally {
+      document.documentElement.removeAttribute('data-turbo-preview');
+    }
+  });
+
+  it('should not start a default Turbo instance over an explicit factory instance', async () => {
+    const hit = vi.fn();
+    container.innerHTML = '<button @click="hit()">Hit</button>';
+    const instance = createHelium({ root: container });
+    await instance.helium({ hit });
+
+    document.dispatchEvent(new Event('turbo:before-render'));
+    document.dispatchEvent(new Event('turbo:render'));
+    await tick();
+    container.querySelector('button').click();
+
+    expect(hit).toHaveBeenCalledTimes(1);
+    instance.heliumTeardown();
+  });
+
   it('should ignore mutations made through a stale state proxy', async () => {
     container.innerHTML = '<p @text="count"></p>';
     const first = await helium({ count: 1 });
@@ -2083,6 +2847,51 @@ describe('HTTP robustness', () => {
     expect(global.fetch).toHaveBeenCalledWith('/api/data', expect.any(Object));
   });
 
+  describe('name-derived params', () => {
+    const jsonOk = () => ({ ok: true, headers: { get: () => 'application/json' }, json: async () => ({}) });
+    const sentBody = call => JSON.parse(global.fetch.mock.calls[call][1].body);
+    const post = async (input, value) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 10));
+    };
+
+    it('sends the input value as data, never evaluating it', async () => {
+      global.fetch.mockImplementation(async () => jsonOk());
+      window.__pwned = false;
+      container.innerHTML = '<input name="user[name]" @post="/save">';
+      await helium({});
+      const input = container.querySelector('input');
+      await post(input, "x' + (window.__pwned = true) + '");
+      await post(input, "O'Brien");
+      expect(window.__pwned).toBe(false);
+      expect(sentBody(0)).toEqual({ user: { name: "x' + (window.__pwned = true) + '" } });
+      expect(sentBody(1)).toEqual({ user: { name: "O'Brien" } });
+      delete window.__pwned;
+    });
+
+    it('reads the element value for a single-key name', async () => {
+      global.fetch.mockImplementation(async () => jsonOk());
+      container.innerHTML = '<input name="username" @post="/save">';
+      await helium({ value: 'state value must not leak' });
+      await post(container.querySelector('input'), 'daz');
+      expect(sentBody(0)).toEqual({ username: 'daz' });
+    });
+
+    it('supports explicit shorthand at any depth and checkbox state', async () => {
+      global.fetch.mockImplementation(async () => jsonOk());
+      container.innerHTML = `
+        <button id="deep" @post="/save" @params="a:b:c:value" value="v">Save</button>
+        <input id="agree" type="checkbox" name="agreed" @post="/consent">`;
+      await helium({});
+      container.querySelector('#deep').click();
+      container.querySelector('#agree').click();
+      await new Promise(r => setTimeout(r, 10));
+      expect(sentBody(0)).toEqual({ a: { b: { c: 'v' } } });
+      expect(sentBody(1)).toEqual({ agreed: true });
+    });
+  });
+
   it('should not render an error response into the success target', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     global.fetch.mockResolvedValueOnce({
@@ -2095,7 +2904,7 @@ describe('HTTP robustness', () => {
     container.querySelector('button').click();
     await new Promise(r => setTimeout(r, 50));
     expect(container.querySelector('#out').innerHTML).toBe('original');
-    expect(spy).toHaveBeenCalledWith('AJAX:', expect.stringContaining('HTTP 500'));
+    expect(spy).toHaveBeenCalledWith('Helium request error:', expect.stringContaining('HTTP 500'));
   });
 
   it('should accept a null JSON response', async () => {
@@ -2144,6 +2953,180 @@ describe('HTTP robustness', () => {
     expect(state.done).toBe(true);
   });
 
+  it('should abort an attribute request when its owning element disconnects', async () => {
+    const errors = [];
+    let requestSignal;
+    global.fetch.mockImplementation((_, options) => {
+      requestSignal = options.signal;
+      return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason)));
+    });
+    container.innerHTML = '<button @get="/slow">Load</button>';
+    const instance = createHelium({ root: container, handleError: error => errors.push(error) });
+    await instance.helium({});
+
+    container.querySelector('button').click();
+    await tick();
+    container.querySelector('button').remove();
+    await tick();
+
+    expect(requestSignal.aborted).toBe(true);
+    expect(errors).toEqual([]);
+    instance.heliumTeardown();
+  });
+
+  it('should let the latest attribute request win without rendering a stale response', async () => {
+    const pending = [];
+    global.fetch.mockImplementation((_, options) => new Promise(resolve => pending.push({ resolve, signal: options.signal })));
+    container.innerHTML = '<button @get="/search" @target="#out">Search</button><div id="out"></div>';
+    await helium({});
+    const button = container.querySelector('button');
+
+    button.click();
+    button.click();
+    expect(pending[0].signal.aborted).toBe(true);
+    pending[1].resolve({ ok: true, headers: { get: () => 'text/html' }, text: async () => 'new' });
+    await tick();
+    pending[0].resolve({ ok: true, headers: { get: () => 'text/html' }, text: async () => 'old' });
+    await tick();
+
+    expect(container.querySelector('#out').textContent).toBe('new');
+  });
+
+  it('should restore loading content after HTTP failure and cancellation', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let rejectSlow;
+    global.fetch
+      .mockResolvedValueOnce({ ok: false, status: 500, headers: { get: () => 'text/plain' } })
+      .mockImplementationOnce((_, options) => new Promise((_, reject) => {
+        rejectSlow = () => reject(options.signal.reason);
+        options.signal.addEventListener('abort', rejectSlow);
+      }));
+    container.innerHTML = `
+      <button id="fail" @get="/fail" @target="#out" @loading="'Loading…'">Fail</button>
+      <button id="slow" @get="/slow" @target="#out" @loading="'Loading…'">Slow</button>
+      <div id="out"><strong>Ready</strong></div>
+    `;
+    await helium({});
+
+    container.querySelector('#fail').click();
+    expect(container.querySelector('#out').textContent).toBe('Loading…');
+    await tick();
+    expect(container.querySelector('#out').innerHTML).toBe('<strong>Ready</strong>');
+
+    const slow = container.querySelector('#slow');
+    slow.click();
+    expect(container.querySelector('#out').textContent).toBe('Loading…');
+    slow.remove();
+    await tick();
+    expect(container.querySelector('#out').innerHTML).toBe('<strong>Ready</strong>');
+    expect(rejectSlow).toBeTypeOf('function');
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should expose parsed data, errors, and request context to HTTP hooks', async () => {
+    const success = vi.fn();
+    const failure = vi.fn();
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ id: 7 }) })
+      .mockResolvedValueOnce({ ok: false, status: 422, statusText: 'Unprocessable Content', headers: { get: () => 'application/json' } });
+    container.innerHTML = `
+      <button id="save" @post="/items" @success="success($response.id, $request.method, $request.response.status)"></button>
+      <button id="fail" @post="/items" @error="failure($error.status, $request.method, $request.response.status)"></button>
+    `;
+    await helium({ success, failure });
+
+    container.querySelector('#save').click();
+    await tick();
+    container.querySelector('#fail').click();
+    await tick();
+
+    expect(success).toHaveBeenCalledWith(7, 'POST', 200);
+    expect(failure).toHaveBeenCalledWith(422, 'POST', 422);
+  });
+
+  it('should support programmatic success/error hooks and external cancellation', async () => {
+    const controller = new AbortController();
+    const errors = [];
+    let optionsSeen;
+    global.fetch.mockImplementation((_, options) => {
+      optionsSeen = options;
+      return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason)));
+    });
+    container.innerHTML = `<button @click="$get('/slow', { signal: controller.signal, cache: 'no-store', error: failed })">Go</button>`;
+    const instance = createHelium({ root: container, handleError: error => errors.push(error) });
+    await instance.helium({ controller, failed: vi.fn() });
+
+    container.querySelector('button').click();
+    controller.abort();
+    await tick();
+
+    expect(optionsSeen.signal.aborted).toBe(true);
+    expect(optionsSeen.cache).toBe('no-store');
+    expect(errors).toEqual([]);
+    instance.heliumTeardown();
+  });
+
+  it('should run programmatic success and error callbacks with request context', async () => {
+    const succeeded = vi.fn();
+    const failed = vi.fn();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, status: 201, headers: { get: () => 'application/json' }, json: async () => ({ id: 3 }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, headers: { get: () => 'application/json' } });
+    container.innerHTML = `
+      <button id="ok" @click="$get('/ok', { target: '#out', success: succeeded })"></button>
+      <button id="bad" @click="$get('/bad', { error: failed })"></button>
+      <div id="out"></div>
+    `;
+    await helium({ succeeded, failed });
+
+    container.querySelector('#ok').click();
+    await tick();
+    container.querySelector('#bad').click();
+    await tick();
+
+    expect(succeeded).toHaveBeenCalledWith({ id: 3 }, expect.objectContaining({ method: 'GET', url: '/ok' }));
+    expect(container.querySelector('#out').textContent).toBe('[object Object]');
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ status: 409 }), expect.objectContaining({ method: 'GET', url: '/bad' }));
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should reject required same-origin mutations without a CSRF token', async () => {
+    document.querySelector('meta[name="csrf-token"]')?.remove();
+    const errors = [];
+    const failure = vi.fn();
+    container.innerHTML = '<button @post="/items" @error="failure($error.code)">Save</button>';
+    const instance = createHelium({ root: container, requireCsrf: true, handleError: error => errors.push(error) });
+    await instance.helium({ failure });
+
+    container.querySelector('button').click();
+    await tick();
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(failure).toHaveBeenCalledWith('HELIUM_CSRF_TOKEN_MISSING');
+    expect(errors[0].code).toBe('HELIUM_CSRF_TOKEN_MISSING');
+    instance.heliumTeardown();
+  });
+
+  it('should include an available CSRF token and forward @options to fetch', async () => {
+    const meta = document.createElement('meta');
+    meta.name = 'csrf-token';
+    meta.content = 'secure-token';
+    document.head.appendChild(meta);
+    global.fetch.mockResolvedValueOnce({ ok: true, headers: { get: () => 'application/json' }, json: async () => ({ ok: true }) });
+    container.innerHTML = `<button @post="/items" @options="{ requireCsrf: true, cache: 'no-store', headers: { 'X-Trace': 'yes' } }">Save</button>`;
+    await helium({});
+
+    container.querySelector('button').click();
+    await tick();
+
+    expect(global.fetch).toHaveBeenCalledWith('/items', expect.objectContaining({
+      cache: 'no-store',
+      headers: expect.objectContaining({ 'X-CSRF-Token': 'secure-token', 'X-Trace': 'yes' }),
+    }));
+    meta.remove();
+  });
+
   it('should parse SSE streams that use CRLF line endings', async () => {
     const encoder = new TextEncoder();
     const chunk = 'event: message\r\ndata: <span>hi</span>\r\n\r\n';
@@ -2163,6 +3146,25 @@ describe('HTTP robustness', () => {
     container.querySelector('button').click();
     await new Promise(r => setTimeout(r, 50));
     expect(container.querySelector('#out').innerHTML).toBe('<span>hi</span>');
+  });
+
+  it('should route an unretried SSE stream failure through the request error lifecycle', async () => {
+    const streamError = new Error('stream disconnected');
+    const failure = vi.fn();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'text/event-stream' },
+      body: { getReader: () => ({ read: async () => { throw streamError; } }) },
+    });
+    container.innerHTML = '<button @get="/events" @error="failure($error, $request.method)"></button>';
+    await helium({ failure });
+
+    container.querySelector('button').click();
+    await tick();
+
+    expect(failure).toHaveBeenCalledWith(streamError, 'GET');
+    expect(spy).toHaveBeenCalledWith('Helium request error:', 'stream disconnected');
   });
 });
 
@@ -2214,5 +3216,67 @@ describe('Nested & shared reactivity', () => {
     state.user.address.city = 'Lyon';
     await new Promise(r => setTimeout(r, 0));
     expect(container.querySelector('span').textContent).toBe('Lyon');
+  });
+});
+
+describe('Structural output ownership', () => {
+  afterEach(() => {
+    window.heliumTeardown?.();
+    document.body.innerHTML = '';
+  });
+
+  it('discards rendered rows restored from a cached copy of the page', async () => {
+    document.body.innerHTML = `<main id="page">
+      <template @for="item in items" :key="item"><b class="row" @text="item"></b></template>
+      <template @if="show"><i class="shown">shown</i></template>
+    </main>`;
+    const first = await helium.mount('#page', { items: [1, 2], show: true });
+    await tick();
+    expect(document.querySelectorAll('.row').length).toBe(2);
+    expect(document.querySelector('.row').hasAttribute('data-helium-generated')).toBe(true);
+
+    // Simulate Turbo restoring a snapshot: a clone of the rendered page.
+    const snapshot = document.querySelector('#page').cloneNode(true);
+    first.unmount();
+    document.querySelector('#page').replaceWith(snapshot);
+    expect(document.querySelectorAll('.row').length).toBe(2);
+
+    const second = await helium.mount('#page', { items: [1, 2, 3], show: true });
+    await tick();
+    expect([...document.querySelectorAll('.row')].map(row => row.textContent)).toEqual(['1', '2', '3']);
+    expect(document.querySelectorAll('.shown').length).toBe(1);
+    second.unmount();
+  });
+
+  it('removes rows for lists that read no state when torn down', async () => {
+    document.body.innerHTML = `<main id="page">
+      <template @for="item in [1, 2]" :key="item"><b class="row" @text="item"></b></template>
+    </main>`;
+    const app = createHelium({ root: '#page' });
+    await app.helium({});
+    await tick();
+    expect(document.querySelectorAll('.row').length).toBe(2);
+    app.heliumTeardown();
+    expect(document.querySelectorAll('.row').length).toBe(0);
+  });
+
+  it('leaves a nested live root to its own instance', async () => {
+    document.body.innerHTML = `<main id="outer" @data="{ label: 'outer' }">
+      <span id="outer-label" @text="label"></span>
+      <aside id="inner"><span id="inner-label" @text="label"></span><button @click="label = 'clicked'">x</button></aside>
+    </main>`;
+    const inner = createHelium({ root: '#inner' });
+    await inner.helium({ label: 'inner' });
+    const outer = createHelium({ root: '#outer' });
+    const outerState = await outer.helium({});
+    await tick();
+    expect(document.querySelector('#outer-label').textContent).toBe('outer');
+    expect(document.querySelector('#inner-label').textContent).toBe('inner');
+    document.querySelector('#inner button').click();
+    await tick();
+    expect(document.querySelector('#inner-label').textContent).toBe('clicked');
+    expect(outerState.label).toBe('outer');
+    outer.heliumTeardown();
+    inner.heliumTeardown();
   });
 });

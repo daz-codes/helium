@@ -1,396 +1,193 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Helium Lite Examples</title>
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      margin: 0;
-      padding: 2rem;
-    }
-
-    .page {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      color: white;
-      text-align: center;
-      margin-bottom: 2rem;
-      font-size: 2.5rem;
-    }
-
-    .examples {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1.5rem;
-    }
-
-    .card {
-      background: white;
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-
-    .card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 15px 50px rgba(0,0,0,0.25);
-    }
-
-    .card.active {
-      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-      border: 2px solid #667eea;
-    }
-
-    .card h2 {
-      margin: 0 0 1rem 0;
-      color: #333;
-      font-size: 1.25rem;
-      border-bottom: 2px solid #eee;
-      padding-bottom: 0.5rem;
-    }
-
-    button {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      padding: 0.6rem 1.2rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.95rem;
-      transition: transform 0.1s, box-shadow 0.2s;
-    }
-
-    button:hover {
-      transform: scale(1.02);
-      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-    }
-
-    button:active {
-      transform: scale(0.98);
-    }
-
-    input, textarea, select {
-      width: 100%;
-      padding: 0.6rem;
-      border: 2px solid #ddd;
-      border-radius: 6px;
-      font-size: 1rem;
-      margin-bottom: 0.5rem;
-      transition: border-color 0.2s;
-    }
-
-    input:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: #667eea;
-    }
-
-    .button-group {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .color-preview {
-      width: 100%;
-      height: 60px;
-      border-radius: 6px;
-      margin-top: 0.5rem;
-      transition: background-color 0.3s;
-    }
-
-    .keyboard-display {
-      font-family: monospace;
-      background: #1a1a2e;
-      color: #0f0;
-      padding: 1rem;
-      border-radius: 6px;
-      min-height: 40px;
-    }
-
-    .progress-bar {
-      width: 100%;
-      height: 20px;
-      background: #eee;
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #667eea, #764ba2);
-      transition: width 0.3s;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 0;
-      margin-bottom: 1rem;
-    }
-
-    .tab {
-      padding: 0.5rem 1rem;
-      background: #eee;
-      border: none;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .tab:first-child { border-radius: 6px 0 0 6px; }
-    .tab:last-child { border-radius: 0 6px 6px 0; }
-    .tab.active { background: #667eea; color: white; }
-
-    .tab-content {
-      padding: 1rem;
-      background: #f9f9f9;
-      border-radius: 6px;
-    }
-
-    .emoji-picker {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .emoji-btn {
-      font-size: 1.5rem;
-      padding: 0.5rem;
-      background: #f0f0f0;
-      border-radius: 8px;
-    }
-
-    .emoji-btn:hover {
-      background: #e0e0e0;
-    }
-
-    .selected-emoji {
-      font-size: 3rem;
-      text-align: center;
-      padding: 1rem;
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Examples for the 2.6 KB Helium Lite runtime.">
+  <title>Helium Lite — 2.6 KB of useful HTML</title>
+  <link rel="stylesheet" href="showcase.css">
+  <script src="file-warning.js" defer></script>
 </head>
 <body>
-
-<div class="page" data-helium @data="{ count: 0 }">
-  <h1>Helium Lite Examples</h1>
-
-  <div class="examples">
-
-    <!-- Counter -->
-    <div class="card">
-      <h2>Counter</h2>
-      <p>Simple reactive counter with increment/decrement.</p>
-      <div class="button-group">
-        <button @click="count--">-</button>
-        <button @click="count++">+</button>
+  <div class="shell">
+    <nav class="site-nav" aria-label="Example navigation">
+      <a class="brand" href="index.html"><span class="brand-mark">He</span> Helium examples</a>
+      <div class="nav-links">
+        <a href="index.html">Standard</a>
+        <a href="index-lite.html" aria-current="page">Lite</a>
+        <a href="todo.html">Todo</a>
+        <a href="validation.html">Requests</a>
+        <a href="sse-demo.html">SSE</a>
       </div>
-      <p>Count: <b @text="count">0</b></p>
-    </div>
+    </nav>
 
-    <!-- Dynamic Classes -->
-    <div
-      @data="{ active: false }"
-      :class="{active: active}"
-      class="card"
-    >
-      <h2>Dynamic Classes</h2>
-      <p>Toggle the active state to change card styling.</p>
-      <button @click="active = !active">
-        Toggle (<span @text="active ? 'ON' : 'OFF'"></span>)
-      </button>
-    </div>
+    <main data-helium @data="{
+      liteCount: 3,
+      profileName: 'Maya Chen', profilePlan: 'Studio', profileSeats: 4, profileUpdates: true,
+      accent: '#146c51', compact: false, showDetails: true,
+      activeView: 'preview', command: '', commandRuns: 0, lastKey: 'No command yet',
+      focusMessage: 'Ready', onceCount: 0,
+      noticeMarkup: '', noticeClicks: 0, cleanupCount: 0
+    }">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Lite · 2.60 KB gzip</p>
+          <h1>Small enough to be <strong>obvious.</strong></h1>
+          <p>
+            One root, one state namespace and the interactions most views actually
+            need: text, forms, toggles, attributes, events, refs and synchronous cleanup.
+          </p>
+        </div>
+        <div class="hero-demo">
+          <div class="metric">
+            <div>
+              <small>One HTML attribute</small>
+              <output @text="liteCount">3</output>
+            </div>
+            <span class="pill"><span class="dot live"></span> reactive</span>
+          </div>
+          <div class="button-row">
+            <button class="button secondary small" @click="liteCount--">−</button>
+            <button class="button small" @click="liteCount++">+</button>
+          </div>
+          <p class="code-line">@click="liteCount++"</p>
+        </div>
+      </header>
 
-    <!-- Two-way Binding -->
-    <div class="card">
-      <h2>Two-Way Binding</h2>
-      <input @bind="firstname" placeholder="First name">
-      <input @bind="lastname" placeholder="Last name">
-      <span @calculate:fullname="firstname && lastname ? firstname + ' ' + lastname : firstname || lastname || 'stranger'"></span>
-      <p>Hello, <b @text="fullname">stranger</b>!</p>
-      <button @click="firstname = '', lastname = ''">Clear</button>
-    </div>
+      <section aria-labelledby="lite-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">The complete Lite contract</p>
+            <h2 id="lite-title">A little runtime doing useful work.</h2>
+          </div>
+          <p>Every example below runs in Lite. There are no local scopes, structures, calculations, effects, imports, HTTP helpers or advanced lifecycle APIs hiding in the page.</p>
+        </div>
 
-    <!-- Visibility Toggle -->
-    <div @data="{ show: true }" class="card">
-      <h2>Visibility Toggle</h2>
-      <button @click="show = !show" @text="show ? 'Hide' : 'Show'">Show</button>
-      <p @visible="show">Now you see me!</p>
-      <p @hidden="show">Now you don't!</p>
-    </div>
+        <div class="grid">
+          <article class="card wide">
+            <span class="feature-label">@bind.trim · @bind.number · checkbox · select</span>
+            <h3>A live account configurator</h3>
+            <p>Form values and the preview share the single Lite state object.</p>
+            <div class="grid" style="margin-top: 18px">
+              <form class="stack form-pane" @submit.prevent="focusMessage = 'Configuration saved at ' + new Date().toLocaleTimeString()">
+                <label>Workspace name <input @bind.trim="profileName" placeholder="Workspace name"></label>
+                <label>Plan
+                  <select @bind="profilePlan">
+                    <option>Starter</option>
+                    <option>Studio</option>
+                    <option>Company</option>
+                  </select>
+                </label>
+                <label>Seats <input type="number" min="1" max="50" @bind.number="profileSeats"></label>
+                <label style="display: flex; grid-template-columns: auto 1fr; align-items: center">
+                  <input type="checkbox" @bind="profileUpdates"> Product updates
+                </label>
+                <button class="button" type="submit">Save configuration</button>
+              </form>
+              <div class="preview preview-pane" style="align-self: stretch">
+                <span class="pill">Live preview</span>
+                <h4 style="margin-top: 22px" @text="profileName || 'Untitled workspace'">Maya Chen</h4>
+                <p><b @text="profilePlan">Studio</b> · <span @text="profileSeats">4</span> seats</p>
+                <p @text="profileUpdates ? 'Updates enabled' : 'No product updates'"></p>
+                <small class="muted" @text="focusMessage">Ready</small>
+              </div>
+            </div>
+          </article>
 
-    <!-- Checkbox Binding -->
-    <div class="card" @data="{ agreed: false, newsletter: true }">
-      <h2>Checkbox Binding</h2>
-      <label>
-        <input type="checkbox" @bind="agreed"> I agree to the terms
-      </label>
-      <label>
-        <input type="checkbox" @bind="newsletter"> Subscribe to newsletter
-      </label>
-      <p>
-        Terms: <b @text="agreed ? 'Accepted' : 'Not accepted'">Not accepted</b><br>
-        Newsletter: <b @text="newsletter ? 'Subscribed' : 'Not subscribed'">Subscribed</b>
-      </p>
-      <button @click="agreed = true, newsletter = true">Accept All</button>
-    </div>
+          <article class="card tint-lime">
+            <span class="feature-label">:class · :style · @visible</span>
+            <h3>Attributes are reactive too</h3>
+            <label>Accent colour <input type="color" @bind="accent"></label>
+            <label style="display: flex; grid-template-columns: auto 1fr; align-items: center; margin-top: 12px">
+              <input type="checkbox" @bind="compact"> Compact mode
+            </label>
+            <button class="button small" style="margin-top: 12px" @click="showDetails = !showDetails" @text="showDetails ? 'Hide details' : 'Show details'">Hide details</button>
+            <div class="preview" :class="{ compact: compact }" :style="{ borderLeft: '8px solid ' + accent, padding: compact ? '10px' : '22px' }" style="margin-top: 14px">
+              <h4>Styled by state</h4>
+              <p @visible="showDetails">The element stays mounted while its style, class and visibility change.</p>
+            </div>
+          </article>
 
-    <!-- Radio Buttons -->
-    <div class="card" @data="{ size: 'medium' }">
-      <h2>Radio Buttons</h2>
-      <label><input type="radio" name="size" value="small" @bind="size"> Small</label>
-      <label><input type="radio" name="size" value="medium" @bind="size"> Medium</label>
-      <label><input type="radio" name="size" value="large" @bind="size"> Large</label>
-      <p>Selected size: <b @text="size">medium</b></p>
-    </div>
+          <article class="card tint-blue">
+            <span class="feature-label">events · keys · .once · .prevent</span>
+            <h3>Useful event modifiers</h3>
+            <form class="stack" @submit.prevent="commandRuns++, lastKey = 'Ran: ' + command, command = ''">
+              <label>Command
+                <input @bind="command" @keydown.enter="lastKey = 'Enter pressed'" placeholder="Type and press Enter">
+              </label>
+              <button class="button" type="submit">Run command</button>
+            </form>
+            <button class="button soft small" style="margin-top: 10px" @click.once="onceCount++">This button counts once</button>
+            <div class="demo-box">
+              <b @text="lastKey">No command yet</b><br>
+              <small><span @text="commandRuns">0</span> commands · once count <span @text="onceCount">0</span></small>
+            </div>
+          </article>
 
-    <!-- Select Dropdown -->
-    <div class="card" @data="{ color: 'blue' }">
-      <h2>Select Dropdown</h2>
-      <select @bind="color">
-        <option value="red">Red</option>
-        <option value="green">Green</option>
-        <option value="blue">Blue</option>
-        <option value="purple">Purple</option>
-      </select>
-      <div class="color-preview" :style="{ backgroundColor: color }"></div>
-    </div>
+          <article class="card half dark">
+            <span class="feature-label">@ref · $event · @text</span>
+            <h3>Reach the element you own</h3>
+            <p>Lite refs are intentionally singular—ideal for focusing, selecting or measuring one element.</p>
+            <div class="stack">
+              <input @ref="focusTarget" @input="focusMessage = $event.target.value || 'Typing…'" placeholder="Focus target">
+              <div class="button-row">
+                <button class="button secondary small" @click="$focusTarget.focus(), focusMessage = 'Focused from @ref'">Focus</button>
+                <button class="button secondary small" @click="$focusTarget.value = '', focusMessage = 'Cleared directly'">Clear</button>
+              </div>
+              <span class="pill" @text="focusMessage">Ready</span>
+            </div>
+          </article>
 
-    <!-- Dynamic Style -->
-    <div class="card" @data="{ width: 50 }">
-      <h2>Dynamic Style</h2>
-      <input type="range" min="0" max="100" @bind="width">
-      <p>Width: <b @text="width">50</b>%</p>
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: width + '%' }"></div>
-      </div>
-    </div>
+          <article class="card half tint-coral">
+            <span class="feature-label">@html · inserted directives · @init cleanup</span>
+            <h3>New HTML comes alive</h3>
+            <p>Lite observes inserted content, initializes its directives and cleans synchronous setup when that content leaves.</p>
+            <div class="button-row">
+              <button class="button small" @click="insertNotice($data)">Insert interactive notice</button>
+              <button class="button secondary small" @click="noticeMarkup = ''">Remove it</button>
+            </div>
+            <div class="demo-box" @html="noticeMarkup || '<span class=muted>No inserted content yet.</span>'"></div>
+            <p class="pill" style="margin: 12px 0 0"><b @text="cleanupCount">0</b>&nbsp; cleanups · <b @text="noticeClicks">0</b>&nbsp; inserted clicks</p>
+          </article>
 
-    <!-- Keyboard Events -->
-    <div class="card" @data="{ lastKey: 'Press a key...' }">
-      <h2>Keyboard Events</h2>
-      <input placeholder="Type here..." @keydown="lastKey = $event.key" @keydown.enter="lastKey = 'ENTER pressed!'" @keydown.esc="lastKey = 'Escaped!'">
-      <div class="keyboard-display" @text="lastKey">Press a key...</div>
-    </div>
+          <article class="card full">
+            <span class="feature-label">Choose the honest build</span>
+            <div class="split" style="align-items: flex-start">
+              <div>
+                <h3>Lite stays small by having a boundary</h3>
+                <p class="muted">Need component-local state, keyed lists, imported behaviours, async lifecycle, requests or Turbo? Standard keeps those capabilities coherent.</p>
+              </div>
+              <a class="button" href="index.html">Explore Standard</a>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
 
-    <!-- Debounced Input -->
-    <div class="card" @data="{ search: '', debouncedSearch: '' }">
-      <h2>Debounced Input</h2>
-      <p>Type and wait 500ms to see the debounced value update.</p>
-      <input placeholder="Search..." @bind="search" @input.debounce:500="debouncedSearch = search">
-      <p>Immediate: <b @text="search || '(empty)'"></b></p>
-      <p>Debounced: <b @text="debouncedSearch || '(empty)'"></b></p>
-    </div>
-
-    <!-- Tabs -->
-    <div class="card" @data="{ tab: 'one' }">
-      <h2>Tabs</h2>
-      <div class="tabs">
-        <button class="tab" :class="{ active: tab === 'one' }" @click="tab = 'one'">Tab 1</button>
-        <button class="tab" :class="{ active: tab === 'two' }" @click="tab = 'two'">Tab 2</button>
-        <button class="tab" :class="{ active: tab === 'three' }" @click="tab = 'three'">Tab 3</button>
-      </div>
-      <div class="tab-content" @visible="tab === 'one'">Content for Tab 1</div>
-      <div class="tab-content" @visible="tab === 'two'">Content for Tab 2</div>
-      <div class="tab-content" @visible="tab === 'three'">Content for Tab 3</div>
-    </div>
-
-    <!-- Element References -->
-    <div class="card">
-      <h2>Element References</h2>
-      <input @ref="myInput" placeholder="Focus me!">
-      <div class="button-group">
-        <button @click="$myInput.focus()">Focus Input</button>
-        <button @click="$myInput.value = 'Hello!'">Set Value</button>
-        <button @click="$myInput.value = ''">Clear</button>
-      </div>
-    </div>
-
-    <!-- Emoji Picker -->
-    <div class="card" @data="{ emoji: '' }">
-      <h2>Emoji Picker</h2>
-      <div class="emoji-picker">
-        <button class="emoji-btn" @click="emoji = '😀'">😀</button>
-        <button class="emoji-btn" @click="emoji = '🎉'">🎉</button>
-        <button class="emoji-btn" @click="emoji = '🚀'">🚀</button>
-        <button class="emoji-btn" @click="emoji = '💡'">💡</button>
-        <button class="emoji-btn" @click="emoji = '🎈'">🎈</button>
-        <button class="emoji-btn" @click="emoji = '❤️'">❤️</button>
-      </div>
-      <div class="selected-emoji" @text="emoji || 'Pick one!'">Pick one!</div>
-    </div>
-
-    <!-- Calculator -->
-    <div class="card" @data="{ a: 10, b: 5, op: '+' }">
-      <h2>Calculator</h2>
-      <input type="number" @bind="a" placeholder="First number">
-      <select @bind="op">
-        <option value="+">+</option>
-        <option value="-">-</option>
-        <option value="*">×</option>
-        <option value="/">÷</option>
-      </select>
-      <input type="number" @bind="b" placeholder="Second number">
-      <span @calculate:result="op === '+' ? a + b : op === '-' ? a - b : op === '*' ? a * b : op === '/' ? a / b : 0"></span>
-      <p style="font-size: 1.5rem; text-align: center;">
-        <span @text="a">10</span>
-        <span @text="op">+</span>
-        <span @text="b">5</span>
-        = <b @text="result">15</b>
-      </p>
-    </div>
-
-    <!-- Character Counter -->
-    <div class="card" @data="{ text: '', maxLength: 100 }">
-      <h2>Character Counter</h2>
-      <textarea @bind="text" placeholder="Type something..." rows="3"></textarea>
-      <span @calculate:remaining="maxLength - text.length"></span>
-      <p :style="{ color: remaining < 20 ? 'red' : 'inherit' }">
-        <b @text="remaining">100</b> characters remaining
-      </p>
-    </div>
-
-    <!-- Init Example -->
-    <div class="card" @data="{ loadTime: '' }">
-      <h2>Init Example</h2>
-      <p @init="loadTime = new Date().toLocaleTimeString()">
-        Page loaded at: <b @text="loadTime"></b>
-      </p>
-      <button @click="loadTime = new Date().toLocaleTimeString()">Update Time</button>
-    </div>
-
-    <!-- Effect Example -->
-    <div class="card" @data="{ clicks: 0, history: [] }">
-      <h2>Effect (Side Effects)</h2>
-      <p>Click the button and watch the history build up.</p>
-      <button @click="clicks++">Click Me</button>
-      <span @effect="clicks > 0 ? history.push('Click #' + clicks) : null"></span>
-      <p>Clicks: <b @text="clicks">0</b></p>
-      <p>History: <span @text="history.join(', ') || 'None yet'">None yet</span></p>
-    </div>
-
-    <!-- Clipboard Copy -->
-    <div class="card" @data="{ copied: false, textToCopy: 'Hello from Helium!' }">
-      <h2>Copy to Clipboard</h2>
-      <input @bind="textToCopy" placeholder="Text to copy">
-      <button @click="navigator.clipboard.writeText(textToCopy).then(() => (copied = true, setTimeout(() => copied = false, 2000)))">
-        <span @text="copied ? 'Copied!' : 'Copy'"></span>
-      </button>
-    </div>
-
+    <footer class="footer">
+      <span>Everything on this page is powered by the standalone 2.60 KB Lite runtime.</span>
+      <a href="../helium-lite.js">Read the Lite source →</a>
+    </footer>
   </div>
-</div>
 
-<script type="module" src="../helium-lite.js"></script>
+  <script type="module">
+    import helium from "../helium-lite.js"
 
+    let data
+    data = await helium({
+      insertNotice(state) {
+        state.noticeMarkup = `
+          <aside class="preview" @init="mountNotice($el, $data)">
+            <h4>Inserted and initialized</h4>
+            <p>This button did not exist when Helium started.</p>
+            <button class="button small" @click="noticeClicks++">Count an inserted click</button>
+          </aside>`
+      },
+      mountNotice(element, state) {
+        element.dataset.mounted = "true"
+        return () => { state.cleanupCount++ }
+      },
+    })
+  </script>
 </body>
 </html>

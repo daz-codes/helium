@@ -1,144 +1,127 @@
-import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { dirname, extname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.PORT || 3456;
+const examplesDir = dirname(fileURLToPath(import.meta.url));
+const root = resolve(examplesDir, "..");
+const port = Number(process.env.PORT || 3456);
+const mimeTypes = new Map([
+  [".css", "text/css; charset=utf-8"],
+  [".html", "text/html; charset=utf-8"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
+  [".map", "application/json; charset=utf-8"],
+  [".svg", "image/svg+xml"],
+]);
 
-// Helper to send SSE events
-const sendSSE = (res, event, data, id = null) => {
-  if (id) res.write(`id: ${id}\n`);
-  if (event) res.write(`event: ${event}\n`);
-  res.write(`data: ${data}\n\n`);
+const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
+const sendSSE = (response, event, data, id = null) => {
+  if (response.destroyed) return false;
+  if (id) response.write(`id: ${id}\n`);
+  if (event) response.write(`event: ${event}\n`);
+  response.write(`data: ${data}\n\n`);
+  return true;
 };
 
-// Delay helper
-const delay = ms => new Promise(r => setTimeout(r, ms));
-
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-
-  // Serve static files
-  if (url.pathname === '/' || url.pathname === '/index.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(fs.readFileSync(path.join(__dirname, 'sse-simple.html')));
-    return;
-  }
-
-  if (url.pathname === '/demo') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(fs.readFileSync(path.join(__dirname, 'sse-demo.html')));
-    return;
-  }
-
-  if (url.pathname === '/helium.js' || url.pathname === '/../helium.js') {
-    res.writeHead(200, { 'Content-Type': 'application/javascript' });
-    res.end(fs.readFileSync(path.join(__dirname, '..', 'helium.js')));
-    return;
-  }
-
-  if (url.pathname === '/helium-sse.js' || url.pathname === '/../helium-sse.js') {
-    res.writeHead(200, { 'Content-Type': 'application/javascript' });
-    res.end(fs.readFileSync(path.join(__dirname, '..', 'helium-sse.js')));
-    return;
-  }
-
-  // SSE Endpoints
-  if (url.pathname === '/api/hello-world') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    // Stream letters one at a time with 500ms delay
-    // Just send data - target comes from @target attribute on the button
-    const message = 'Hello from Helium SSE!';
-    let output = '';
-    for (const char of message) {
-      output += char;
-      sendSSE(res, null, `<span>${output}<span style="opacity:0.5">|</span></span>`);
-      await delay(500);
-    }
-    // Final message without cursor
-    sendSSE(res, null, `<span style="color: green; font-weight: bold;">${message}</span>`);
-    res.end();
-    return;
-  }
-
-  if (url.pathname === '/api/count') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    for (let i = 1; i <= 10; i++) {
-      sendSSE(res, '#counter', `<span>${i}</span>`, `count-${i}`);
-      await delay(300);
-    }
-    sendSSE(res, '#counter', `<span style="color: green;">Done!</span>`);
-    res.end();
-    return;
-  }
-
-  if (url.pathname === '/api/dashboard') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    // Send to different targets using event: field
-    await delay(200);
-    sendSSE(res, '#header', '<h3>Dashboard Loaded</h3>');
-    await delay(300);
-    sendSSE(res, '#stats', `<div>Users: 1,234</div><div>Revenue: $5,678</div>`);
-    await delay(200);
-    sendSSE(res, '#header', '<h3>Dashboard Loaded <span style="color:green;">&#10003;</span></h3>');
-    res.end();
-    return;
-  }
-
-  if (url.pathname === '/api/time') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    // This updates state.currentTime (not a DOM element)
-    sendSSE(res, 'currentTime', new Date().toLocaleTimeString());
-    res.end();
-    return;
-  }
-
-  if (url.pathname === '/api/events') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    const events = ['User logged in', 'File uploaded', 'Comment added', 'Order placed', 'Payment received'];
-
-    for (let i = 0; i < events.length; i++) {
-      const time = new Date().toLocaleTimeString();
-      sendSSE(res, '#events', `<div class="event-item">[${time}] ${events[i]}</div>`, `event-${i}`);
-      await delay(800);
-    }
-    sendSSE(res, '#events', `<div class="event-item" style="color: gray;">[Stream ended]</div>`);
-    res.end();
-    return;
-  }
-
-  // 404
-  res.writeHead(404);
-  res.end('Not found');
+const beginSSE = response => response.writeHead(200, {
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
 });
 
-server.listen(PORT, () => {
-  console.log(`SSE Demo server running at http://localhost:${PORT}`);
-  console.log('Press Ctrl+C to stop');
+const staticPath = pathname => {
+  const path = resolve(root, decodeURIComponent(pathname).replace(/^\/+/, ""));
+  if (path !== root && !path.startsWith(root + sep)) return null;
+  return path;
+};
+
+const server = createServer(async (request, response) => {
+  try {
+    const url = new URL(request.url, `http://127.0.0.1:${port}`);
+
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      response.writeHead(302, { Location: "/examples/index.html" }).end();
+      return;
+    }
+    if (url.pathname === "/demo") {
+      response.writeHead(302, { Location: "/examples/sse-demo.html" }).end();
+      return;
+    }
+
+    if (url.pathname === "/api/hello-world") {
+      beginSSE(response);
+      const message = "Hello from Helium SSE!";
+      let output = "";
+      for (const character of message) {
+        output += character;
+        if (!sendSSE(response, null, `<span>${output}<span style="opacity:0.5">|</span></span>`)) return;
+        await delay(500);
+      }
+      sendSSE(response, null, `<span style="color: green; font-weight: bold;">${message}</span>`);
+      response.end();
+      return;
+    }
+
+    if (url.pathname === "/api/count") {
+      beginSSE(response);
+      for (let count = 1; count <= 10; count++) {
+        if (!sendSSE(response, "#counter", `<span>${count}</span>`, `count-${count}`)) return;
+        await delay(300);
+      }
+      sendSSE(response, "#counter", '<span style="color: green;">Done!</span>');
+      response.end();
+      return;
+    }
+
+    if (url.pathname === "/api/dashboard") {
+      beginSSE(response);
+      await delay(200);
+      if (!sendSSE(response, "#header", "<h3>Dashboard Loaded</h3>")) return;
+      await delay(300);
+      if (!sendSSE(response, "#stats", "<div>Users: 1,234</div><div>Revenue: $5,678</div>")) return;
+      await delay(200);
+      sendSSE(response, "#header", '<h3>Dashboard Loaded <span style="color:green;">&#10003;</span></h3>');
+      response.end();
+      return;
+    }
+
+    if (url.pathname === "/api/time") {
+      beginSSE(response);
+      sendSSE(response, "currentTime", new Date().toLocaleTimeString());
+      response.end();
+      return;
+    }
+
+    if (url.pathname === "/api/events") {
+      beginSSE(response);
+      const events = ["User logged in", "File uploaded", "Comment added", "Order placed", "Payment received"];
+      for (const [index, event] of events.entries()) {
+        const time = new Date().toLocaleTimeString();
+        if (!sendSSE(response, "#events", `<div class="event-item">[${time}] ${event}</div>`, `event-${index}`)) return;
+        await delay(800);
+      }
+      sendSSE(response, "#events", '<div class="event-item" style="color: gray;">[Stream ended]</div>');
+      response.end();
+      return;
+    }
+
+    const path = staticPath(url.pathname);
+    if (!path) {
+      response.writeHead(403).end("Forbidden");
+      return;
+    }
+    const contents = await readFile(path);
+    response.writeHead(200, { "Content-Type": mimeTypes.get(extname(path)) || "application/octet-stream" });
+    response.end(contents);
+  } catch (error) {
+    if (response.headersSent) response.destroy(error);
+    else response.writeHead(error.code === "ENOENT" ? 404 : 500).end(error.message);
+  }
+});
+
+server.listen(port, "127.0.0.1", () => {
+  console.log(`Helium examples: http://127.0.0.1:${port}/examples/index.html`);
+  console.log(`SSE examples:    http://127.0.0.1:${port}/examples/sse-demo.html`);
+  console.log("Press Ctrl+C to stop");
 });

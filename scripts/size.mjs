@@ -6,15 +6,18 @@ import { constants, brotliCompressSync, gzipSync } from "node:zlib";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
 
-// Dynamic-directive lifecycle ceilings. They retain a small margin over the
-// measured production bundles so later regressions fail without making normal
-// minifier variation look like a release blocker.
+// Release ceilings retain a small margin over the measured production bundles.
+// Lite is deliberately capped at its original 3 KB gzip goal.
 const budgets = {
-  "helium.min.js": 9750,
-  "helium-lite.min.js": 6300,
-  "helium-sse.min.js": 10150,
-  "helium-csp.min.js": 13900,
-  "helium-csp-sse.min.js": 14275,
+  "helium.min.js": 13260,
+  "helium-lite.min.js": 3000,
+  "helium-sse.min.js": 13750,
+  "helium-turbo.min.js": 14170,
+  "helium-turbo-sse.min.js": 14580,
+  "helium-csp.min.js": 17400,
+  "helium-csp-sse.min.js": 17820,
+  "helium-csp-turbo.min.js": 18400,
+  "helium-csp-turbo-sse.min.js": 18810,
 };
 
 const rows = [];

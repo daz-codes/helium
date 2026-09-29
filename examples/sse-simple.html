@@ -1,49 +1,24 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Helium SSE - Simple Demo</title>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      max-width: 600px;
-      margin: 4rem auto;
-      padding: 0 1rem;
-      text-align: center;
-    }
-    button {
-      padding: 1rem 2rem;
-      font-size: 1.2rem;
-      cursor: pointer;
-      background: #4a90d9;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      margin-bottom: 2rem;
-    }
-    button:hover { background: #357abd; }
-    button:active { background: #2a5f8f; }
-    #message {
-      padding: 2rem;
-      background: #f5f5f5;
-      border-radius: 8px;
-      min-height: 3rem;
-      font-size: 1.5rem;
-      border: 2px solid #ddd;
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Helium SSE — minimal example</title>
+  <link rel="stylesheet" href="showcase.css">
+  <script src="file-warning.js" defer></script>
 </head>
-<body data-helium>
-  <h1>Helium SSE Demo</h1>
-
-  <button @get="/api/hello-world" @target="#message">Start</button>
-
-  <div id="message">&nbsp;</div>
-
-  <script type="module">
-    import helium from '../helium-sse.js';
-    helium();
-  </script>
+<body>
+  <main class="shell" data-helium>
+    <article class="card full tint-lime" style="width: min(620px, 100%); margin: 12vh auto 0; text-align: center">
+      <span class="feature-label">minimal SSE example</span>
+      <h1 style="font-size: clamp(2.5rem, 10vw, 5rem); color: var(--ink)">Hello, stream.</h1>
+      <p class="muted">One directive starts the request. One target receives each server event.</p>
+      <button class="button" @get="/api/hello-world" @target="#message">Start</button>
+      <div id="message" class="preview" style="display: grid; margin-top: 20px; place-items: center; font-size: 1.4rem">Ready.</div>
+      <p class="code-line">@get="/api/hello-world" @target="#message"</p>
+      <a href="sse-demo.html">See all SSE patterns →</a>
+    </article>
+  </main>
+  <script type="module">import helium from "../helium-sse.js"; helium()</script>
 </body>
 </html>

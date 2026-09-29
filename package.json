@@ -1,43 +1,133 @@
 {
   "name": "@daz4126/helium",
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0-rc.5",
   "main": "helium.js",
   "type": "module",
+  "types": "./helium.d.ts",
   "exports": {
-    ".": "./helium.js",
-    "./lite": "./helium-lite.js",
-    "./sse": "./helium-sse.js",
-    "./csp": "./helium-csp.js",
-    "./csp/sse": "./helium-csp-sse.js",
-    "./min": "./dist/helium.min.js",
-    "./lite/min": "./dist/helium-lite.min.js",
-    "./sse/min": "./dist/helium-sse.min.js",
-    "./csp/min": "./dist/helium-csp.min.js",
-    "./csp/sse/min": "./dist/helium-csp-sse.min.js"
+    ".": {
+      "types": "./helium.d.ts",
+      "import": "./helium.js",
+      "default": "./helium.js"
+    },
+    "./lite": {
+      "types": "./helium-lite.d.ts",
+      "import": "./helium-lite.js",
+      "default": "./helium-lite.js"
+    },
+    "./sse": {
+      "types": "./helium-sse.d.ts",
+      "import": "./helium-sse.js",
+      "default": "./helium-sse.js"
+    },
+    "./turbo": {
+      "types": "./helium-turbo.d.ts",
+      "import": "./helium-turbo.js",
+      "default": "./helium-turbo.js"
+    },
+    "./turbo/sse": {
+      "types": "./helium-turbo-sse.d.ts",
+      "import": "./helium-turbo-sse.js",
+      "default": "./helium-turbo-sse.js"
+    },
+    "./csp": {
+      "types": "./helium-csp.d.ts",
+      "import": "./helium-csp.js",
+      "default": "./helium-csp.js"
+    },
+    "./csp/sse": {
+      "types": "./helium-csp-sse.d.ts",
+      "import": "./helium-csp-sse.js",
+      "default": "./helium-csp-sse.js"
+    },
+    "./csp/turbo": {
+      "types": "./helium-csp-turbo.d.ts",
+      "import": "./helium-csp-turbo.js",
+      "default": "./helium-csp-turbo.js"
+    },
+    "./csp/turbo/sse": {
+      "types": "./helium-csp-turbo-sse.d.ts",
+      "import": "./helium-csp-turbo-sse.js",
+      "default": "./helium-csp-turbo-sse.js"
+    },
+    "./min": {
+      "types": "./helium.d.ts",
+      "import": "./dist/helium.min.js",
+      "default": "./dist/helium.min.js"
+    },
+    "./lite/min": {
+      "types": "./helium-lite.d.ts",
+      "import": "./dist/helium-lite.min.js",
+      "default": "./dist/helium-lite.min.js"
+    },
+    "./sse/min": {
+      "types": "./helium-sse.d.ts",
+      "import": "./dist/helium-sse.min.js",
+      "default": "./dist/helium-sse.min.js"
+    },
+    "./turbo/min": {
+      "types": "./helium-turbo.d.ts",
+      "import": "./dist/helium-turbo.min.js",
+      "default": "./dist/helium-turbo.min.js"
+    },
+    "./turbo/sse/min": {
+      "types": "./helium-turbo-sse.d.ts",
+      "import": "./dist/helium-turbo-sse.min.js",
+      "default": "./dist/helium-turbo-sse.min.js"
+    },
+    "./csp/min": {
+      "types": "./helium-csp.d.ts",
+      "import": "./dist/helium-csp.min.js",
+      "default": "./dist/helium-csp.min.js"
+    },
+    "./csp/sse/min": {
+      "types": "./helium-csp-sse.d.ts",
+      "import": "./dist/helium-csp-sse.min.js",
+      "default": "./dist/helium-csp-sse.min.js"
+    },
+    "./csp/turbo/min": {
+      "types": "./helium-csp-turbo.d.ts",
+      "import": "./dist/helium-csp-turbo.min.js",
+      "default": "./dist/helium-csp-turbo.min.js"
+    },
+    "./csp/turbo/sse/min": {
+      "types": "./helium-csp-turbo-sse.d.ts",
+      "import": "./dist/helium-csp-turbo-sse.min.js",
+      "default": "./dist/helium-csp-turbo-sse.min.js"
+    }
   },
   "files": [
     "helium.js",
     "helium-lite.js",
     "helium-sse.js",
+    "helium-turbo.js",
+    "helium-turbo-sse.js",
+    "helium-turbo-adapter.js",
     "helium-csp.js",
     "helium-csp-sse.js",
+    "helium-csp-turbo.js",
+    "helium-csp-turbo-sse.js",
     "jexpr.js",
+    "_types.d.ts",
+    "*.d.ts",
     "dist",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "generate": "node scripts/generate-lite.mjs",
+    "examples": "node examples/sse-server.js",
     "build": "node scripts/build.mjs",
     "size": "npm run build && node scripts/size.mjs",
     "size:check": "npm run build && node scripts/size.mjs --check",
     "check": "npm run test:run && npm run size:check && npm run test:dist",
-    "check:ci": "npm run check && npm run test:browser",
-    "pretest": "npm run generate",
+    "check:ci": "npm run check && npm run test:types && npm run test:package && npm run test:browser",
     "test": "vitest",
-    "test:ui": "npm run generate && vitest --ui",
-    "test:run": "npm run generate && vitest run",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
     "test:dist": "node scripts/smoke-build.mjs",
+    "test:types": "tsc --noEmit --strict --lib ES2022,DOM --module NodeNext --moduleResolution NodeNext test-fixtures/types-consumer.ts",
+    "test:package": "node scripts/package-smoke.mjs",
     "test:browser": "npm run build && node scripts/browser-smoke.mjs",
     "bench": "npm run build && node scripts/benchmark.mjs",
     "prepack": "npm run size:check && npm run test:dist"
@@ -47,7 +137,11 @@
     "reactive",
     "state",
     "light",
-    "powerful"
+    "powerful",
+    "html-first",
+    "hotwire",
+    "turbo",
+    "stimulus-alternative"
   ],
   "author": "DAZ",
   "license": "MIT",
@@ -61,6 +155,7 @@
   },
   "homepage": "https://github.com/daz-codes/helium#readme",
   "devDependencies": {
+    "@hotwired/turbo": "^8.0.23",
     "@playwright/test": "^1.61.1",
     "@starfederation/datastar": "^1.0.0-beta.11",
     "alpinejs": "^3.15.12",
@@ -69,6 +164,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "terser": "^5.48.0",
+    "typescript": "^7.0.2",
     "vitest": "^3.2.4"
   }
 }

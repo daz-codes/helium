@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { helium, heliumTeardown, evaluate, preprocess } from './helium-csp.js';
+import { pathToFileURL } from 'node:url';
+import { createCSPHelium, helium, heliumTeardown, evaluate, preprocess } from './helium-csp-turbo.js';
 
 // State changes are batched and applied on a microtask.
 const tick = () => new Promise(r => setTimeout(r, 0));
@@ -32,6 +33,39 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       a.unmount();
       b.unmount();
     });
+
+    it('should not start the CSP default instance over an explicit factory instance after Turbo renders', async () => {
+      const hit = vi.fn();
+      container.innerHTML = '<button data-he-click="hit()">Hit</button>';
+      const instance = createCSPHelium({ root: container });
+      await instance.helium({ hit });
+
+      document.dispatchEvent(new Event('turbo:before-render'));
+      document.dispatchEvent(new Event('turbo:render'));
+      await tick();
+      container.querySelector('button').click();
+
+      expect(hit).toHaveBeenCalledTimes(1);
+      instance.heliumTeardown();
+    });
+
+    it('should tear down when a mounted root disconnects', async () => {
+      const root = document.createElement('section');
+      root.setAttribute('data-he-init', 'setup($signal)');
+      document.body.append(root);
+      let signal;
+      const cleanup = vi.fn();
+      const app = await helium.mount(root, {
+        setup: value => (signal = value, cleanup),
+      });
+
+      root.remove();
+      await tick();
+      expect(signal.aborted).toBe(true);
+      expect(cleanup).toHaveBeenCalledOnce();
+      app.unmount();
+      expect(cleanup).toHaveBeenCalledOnce();
+    });
   });
 
   describe('Keyed @for', () => {
@@ -50,6 +84,31 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
 
       expect(container.querySelectorAll('p')[1]).toBe(first);
       expect([...container.querySelectorAll('p')].map(el => el.textContent)).toEqual(['0: Two', '1: One']);
+    });
+
+    it('should not duplicate structural output from a restored Turbo snapshot', async () => {
+      container.innerHTML = `
+        <main data-he-data="{ items: [{ id: 1 }, { id: 2 }], show: true }">
+          <template data-he-for="item in items" :key="item.id"><span class="row" data-he-text="item.id"></span></template>
+          <template data-he-if="show"><b class="conditional">shown</b></template>
+        </main>
+      `;
+      await helium({});
+      await tick();
+
+      // Caching leaves the live page (and so the snapshot) fully rendered.
+      document.dispatchEvent(new Event('turbo:before-cache'));
+      expect(container.querySelectorAll('.row')).toHaveLength(2);
+      expect(container.querySelectorAll('.conditional')).toHaveLength(1);
+
+      // Turbo restores a clone of the page; its stale rows must not duplicate.
+      const snapshot = container.cloneNode(true);
+      container.replaceWith(snapshot);
+      container = snapshot;
+      document.dispatchEvent(new Event('turbo:render'));
+      await tick();
+      expect(container.querySelectorAll('.row')).toHaveLength(2);
+      expect(container.querySelectorAll('.conditional')).toHaveLength(1);
     });
   });
 
@@ -626,6 +685,158 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
       await new Promise(r => setTimeout(r, 0));
       expect(container.querySelector('span').textContent).toBe('set by init');
     });
+
+    it('should support independent namespaced initializers', async () => {
+      const started = [];
+      const cleaned = [];
+      container.innerHTML = `
+        <div
+          data-he-init:one="setup('one')"
+          data-he-init:two="setup('two')"
+        ></div>
+      `;
+      await helium({
+        setup: name => (started.push(name), () => cleaned.push(name))
+      });
+      const element = container.firstElementChild;
+      expect(started).toEqual(['one', 'two']);
+
+      element.removeAttribute('data-he-init:one');
+      await new Promise(r => setTimeout(r, 0));
+      expect(cleaned).toEqual(['one']);
+
+      element.remove();
+      await new Promise(r => setTimeout(r, 0));
+      expect(cleaned).toEqual(['one', 'two']);
+    });
+
+    it('should expose an initializer signal and safely clean up async setup', async () => {
+      let resolveSetup;
+      let signal;
+      const cleanup = vi.fn();
+      const errors = [];
+      container.innerHTML = '<div data-he-init:feature="setup($signal)"></div>';
+      const instance = createCSPHelium({
+        root: container,
+        handleError: (error, context) => errors.push({ error, context }),
+      });
+      await instance.helium({
+        setup: value => {
+          signal = value;
+          return new Promise(resolve => { resolveSetup = resolve; });
+        }
+      });
+
+      container.firstElementChild.remove();
+      await tick();
+      expect(signal.aborted).toBe(true);
+
+      resolveSetup(async () => cleanup());
+      await tick();
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(errors).toEqual([]);
+      instance.heliumTeardown();
+    });
+  });
+
+  describe('@import lifecycle behaviors', () => {
+    const one = pathToFileURL(`${process.cwd()}/test-fixtures/import-behavior-one.js`).href;
+    const two = pathToFileURL(`${process.cwd()}/test-fixtures/import-behavior-two.js`).href;
+
+    afterEach(() => {
+      delete globalThis.__heliumImportBehavior;
+    });
+
+    it('should support default setup, local helpers, and independent removal', async () => {
+      const contexts = new Map();
+      const cleaned = [];
+      globalThis.__heliumImportBehavior = (name, context) => {
+        contexts.set(name, context);
+        return () => cleaned.push([name, context.signal.aborted]);
+      };
+      const element = document.createElement('section');
+      element.innerHTML = '<button class="owned" data-he-ref="trigger"></button>';
+      element.setAttribute('data-he-import', `${one},${two}`);
+      container.append(element);
+      const instance = createCSPHelium({ root: container });
+      const state = await instance.helium({});
+
+      expect(state.importedGreeting('CSP')).toBe('Hello CSP');
+      expect(contexts.get('one').refs.trigger).toEqual([element.firstElementChild]);
+      expect(contexts.get('one').query('.owned')).toBe(element.firstElementChild);
+      expect(contexts.get('two').signal.aborted).toBe(false);
+
+      element.setAttribute('data-he-import', two);
+      await tick();
+      expect(cleaned).toEqual([['one', true]]);
+      expect(contexts.get('two').signal.aborted).toBe(false);
+
+      instance.heliumTeardown();
+      expect(cleaned).toEqual([['one', true], ['two', true]]);
+    });
+
+    it('should expose lifecycle-bound watch with previous values', async () => {
+      const changes = [];
+      let context;
+      globalThis.__heliumImportBehavior = (_name, value) => {
+        context = value;
+        value.watch(data => data.count, (current, previous) => changes.push([current, previous]));
+      };
+      const element = document.createElement('section');
+      element.setAttribute('data-he-data', '{ count: 1 }');
+      element.setAttribute('data-he-import', one);
+      container.append(element);
+      const instance = createCSPHelium({ root: container });
+      await instance.helium({});
+
+      context.data.count = 2;
+      await tick();
+      expect(changes).toEqual([[2, 1]]);
+
+      element.removeAttribute('data-he-import');
+      await tick();
+      context.data.count = 3;
+      await tick();
+      expect(changes).toEqual([[2, 1]]);
+      instance.heliumTeardown();
+    });
+
+    it('should make behavior-local ref collections watchable', async () => {
+      const changes = [];
+      globalThis.__heliumImportBehavior = (_name, context) => {
+        context.watch(
+          () => context.refs.item,
+          (current, previous) => changes.push([
+            current.map(element => element.id),
+            previous.map(element => element.id),
+          ]),
+        );
+      };
+      const element = document.createElement('section');
+      element.innerHTML = '<button id="first" data-he-ref="item"></button>';
+      element.setAttribute('data-he-import', one);
+      container.append(element);
+      const instance = createCSPHelium({ root: container });
+      await instance.helium({});
+
+      const second = document.createElement('button');
+      second.id = 'second';
+      second.setAttribute('data-he-ref', 'item');
+      element.append(second);
+      await tick();
+      expect(changes).toEqual([[['first', 'second'], ['first']]]);
+
+      element.insertBefore(second, element.firstElementChild);
+      await tick();
+      expect(changes.at(-1)).toEqual([['second', 'first'], ['first', 'second']]);
+
+      element.removeAttribute('data-he-import');
+      await tick();
+      second.remove();
+      await tick();
+      expect(changes).toHaveLength(2);
+      instance.heliumTeardown();
+    });
   });
 
   describe('@data Directive', () => {
@@ -768,6 +979,29 @@ describe('Helium CSP - CSP-Safe Reactive Library', () => {
         method: 'POST',
         body: JSON.stringify({ name: 'test' })
       }));
+    });
+
+    it('should expose request lifecycle values to CSP-safe success and error hooks', async () => {
+      const success = vi.fn();
+      const failure = vi.fn();
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      global.fetch
+        .mockResolvedValueOnce({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ id: 9 }) })
+        .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => 'application/json' } });
+      container.innerHTML = `
+        <button id="ok" data-he-get="/items" data-he-success="success($response.id, $request.method)"></button>
+        <button id="bad" data-he-get="/items" data-he-error="failure($error.status, $request.response.status)"></button>
+      `;
+      await helium({ success, failure });
+
+      container.querySelector('#ok').click();
+      await tick();
+      container.querySelector('#bad').click();
+      await tick();
+
+      expect(success).toHaveBeenCalledWith(9, 'GET');
+      expect(failure).toHaveBeenCalledWith(422, 422);
+      expect(spy).toHaveBeenCalledTimes(1);
     });
   });
 
