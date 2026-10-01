@@ -14,10 +14,10 @@ const budgets = {
   "helium-sse.min.js": 14035,
   "helium-turbo.min.js": 14470,
   "helium-turbo-sse.min.js": 14880,
-  "helium-csp.min.js": 17690,
-  "helium-csp-sse.min.js": 18110,
-  "helium-csp-turbo.min.js": 18690,
-  "helium-csp-turbo-sse.min.js": 19115,
+  "helium-csp.min.js": 17760,
+  "helium-csp-sse.min.js": 18185,
+  "helium-csp-turbo.min.js": 18765,
+  "helium-csp-turbo-sse.min.js": 19185,
 };
 
 const rows = [];

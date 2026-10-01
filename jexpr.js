@@ -228,7 +228,11 @@ class Parser {
 
   parse() {
     this._advance();
-    return this._parseExpression();
+    const expr = this._parseExpression();
+    // Anything left over means the input was not one expression. Stopping
+    // here silently would run only its first part (`a = 1 b = 2`).
+    if (this._token) throw new Error(`Unexpected ${this._value}`);
+    return expr;
   }
 
   _advance(kind, value) {
@@ -418,7 +422,11 @@ class Parser {
       const params = expressions?.map((e) => e.value) ?? [];
       return this._ast.arrowFunction(params, body);
     }
-    return this._ast.paren(expressions[0]);
+    // `(a, b)` that is not an arrow parameter list is the comma operator:
+    // evaluate every part in order and yield the last.
+    return this._ast.paren(expressions[1]
+      ? this._ast.index(this._ast.list(expressions), this._ast.literal(expressions.length - 1))
+      : expressions[0]);
   }
 
   _parseString() {

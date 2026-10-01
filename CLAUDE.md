@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Helium is an ultra-light reactive library that makes HTML interactive using
 declarative attributes. Current production builds are approximately 13.5KB
-Standard, 2.6KB Lite, and 17.6KB CSP when minified and gzipped. Turbo navigation
+Standard, 2.6KB Lite, and 17.7KB CSP when minified and gzipped. Turbo navigation
 and SSE are separate entry points. These figures come from the Terser builds
 enforced by `npm run size:check`; Lite has a hard 3KB gzip ceiling. Source entry
 points require no build step and work directly in the browser.

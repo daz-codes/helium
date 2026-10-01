@@ -1438,4 +1438,25 @@ describe('Reactivity regressions', () => {
     await tick();
     expect(moving.textContent).toBe('B2');
   });
+  it('runs every part of comma expressions in CSP handlers', async () => {
+    container.innerHTML = `
+      <button id="top" @click="a = 1, b = 2"></button>
+      <button id="grouped" @click="(c = 3, d = 4)"></button>
+      <button id="branch" @click="ok ? (e = 5, f = 6) : 0"></button>
+      <button id="arrow" @click="items.forEach(i => (i.x = 1, i.y = 2))"></button>`;
+    const state = await helium({ a: 0, b: 0, c: 0, d: 0, e: 0, f: 0, ok: true, items: [{}] });
+    for (const id of ['top', 'grouped', 'branch', 'arrow']) container.querySelector('#' + id).click();
+    expect([state.a, state.b, state.c, state.d, state.e, state.f]).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(JSON.parse(JSON.stringify(state.items))).toEqual([{ x: 1, y: 2 }]);
+  });
+
+  it('refuses to run a handler with leftover tokens instead of running part of it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    container.innerHTML = '<button @click="a = 1 b = 2"></button>';
+    const state = await helium({ a: 0, b: 0 });
+    container.querySelector('button').click();
+    expect([state.a, state.b]).toEqual([0, 0]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('compile'), 'a = 1 b = 2', expect.stringContaining('Unexpected'));
+    warn.mockRestore();
+  });
 });

@@ -609,4 +609,34 @@ describe('jexpr - Expression Parser', () => {
       expect(evaluate('cond ? 1 : 2', { cond: false })).toBe(2);
     });
   });
+  describe('Comma sequences', () => {
+    it('evaluates every part of a parenthesized sequence and returns the last', () => {
+      const scope = { a: 0, b: 0 };
+      expect(evaluate('(a = 1, b = 2)', scope)).toBe(2);
+      expect([scope.a, scope.b]).toEqual([1, 2]);
+    });
+
+    it('supports sequences in ternary branches, arguments, and arrow bodies', () => {
+      const scope = { a: 0, b: 0, ok: true, f: v => v, items: [{}, {}] };
+      expect(evaluate('ok ? (a = 1, b = 2) : 0', scope)).toBe(2);
+      expect([scope.a, scope.b]).toEqual([1, 2]);
+      expect(evaluate('f((a = 3, b = 4))', scope)).toBe(4);
+      expect([scope.a, scope.b]).toEqual([3, 4]);
+      evaluate('items.forEach(i => (i.x = 1, i.y = 2))', scope);
+      expect(scope.items).toEqual([{ x: 1, y: 2 }, { x: 1, y: 2 }]);
+    });
+
+    it('keeps arrow parameter lists and call arguments separate', () => {
+      expect(evaluate('((a, b) => a + b)(2, 3)')).toBe(5);
+      expect(evaluate('f(1, 2)', { f: (x, y) => x * 10 + y })).toBe(12);
+    });
+  });
+
+  describe('Unconsumed input', () => {
+    it('rejects tokens left over after a complete expression', () => {
+      expect(() => parse('a = 1 b = 2', astFactory)).toThrow(/Unexpected/);
+      expect(() => parse('a + 1 )', astFactory)).toThrow(/Unexpected/);
+      expect(() => parse('a instanceof B', astFactory)).toThrow(/Unexpected/);
+    });
+  });
 });

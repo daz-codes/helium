@@ -48,6 +48,19 @@ Checked for each candidate by `npm run check:ci`:
   Helium forms with server validation and CSRF, Frames, Streams, morph
   refreshes, permanent elements, and imported behaviors.
 
+## 1.0.0-rc.7 — 2026-10-01
+
+### Fixed
+
+- CSP builds now run every part of a comma expression inside parentheses,
+  ternary branches, call arguments, and arrow-function bodies
+  (`ok ? (a = 1, b = 2) : 0`, `items.forEach(i => (i.x = 1, i.y = 2))`).
+  Previously only the first part ran, silently. Top-level `a = 1, b = 2`
+  already worked.
+- The CSP expression parser now rejects input left over after a complete
+  expression (`a = 1 b = 2`, `a + 1 )`) with a compile warning, instead of
+  silently running the first part.
+
 ## 1.0.0-rc.6 — 2026-09-29
 
 ### Documentation
